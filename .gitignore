@@ -1,0 +1,22 @@
+# Local configuration — contains SDK path and API tokens, never commit
+local.properties
+
+# Build output
+build/
+app/build/
+*.apk
+*.aab
+
+# Gradle
+.gradle/
+gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Crash logs
+hs_err_pid*.log
+replay_pid*.log

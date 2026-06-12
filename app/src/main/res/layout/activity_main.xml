@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background"
+    android:paddingLeft="20dp"
+    android:paddingRight="20dp"
+    android:paddingTop="0dp"
+    android:paddingBottom="20dp"
+    android:fitsSystemWindows="true">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ОТГРУЗКИ"
+        android:textSize="30sp"
+        android:textStyle="bold"
+        android:textColor="@color/on_background"
+        android:letterSpacing="0.02"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="16dp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/card_bg"
+        android:elevation="3dp"
+        android:padding="20dp"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="СКАНИРОВАНИЕ"
+            android:textSize="11sp"
+            android:textColor="@color/secondary"
+            android:letterSpacing="0.1"
+            android:layout_marginBottom="8dp"/>
+
+        <TextView
+            android:id="@+id/tvScanBuffer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@color/primary"
+            android:hint="ожидание сканирования"
+            android:textColorHint="@color/secondary"/>
+
+        <TextView
+            android:id="@+id/tvCacheStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Загрузка кэша..."
+            android:textSize="11sp"
+            android:textColor="@color/secondary"
+            android:letterSpacing="0.04"
+            android:layout_marginTop="8dp"/>
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="01 · СПИСОК ЗАКАЗОВ"
+        android:textSize="11sp"
+        android:textColor="@color/secondary"
+        android:letterSpacing="0.08"
+        android:layout_marginBottom="12dp"/>
+
+    <ScrollView
+        android:id="@+id/svScanned"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/llScannedList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"/>
+    </ScrollView>
+
+    <Button
+        android:id="@+id/btnCreate"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:layout_marginTop="10dp"
+        android:text="Создать отгрузки"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textAllCaps="false"
+        android:textColor="@color/on_primary"
+        android:backgroundTint="@color/on_background"/>
+
+    <Button
+        android:id="@+id/btnClear"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:text="Сброс"
+        android:textSize="14sp"
+        android:textAllCaps="false"
+        android:textColor="@color/secondary"
+        android:backgroundTint="@android:color/transparent"
+        android:elevation="0dp"/>
+</LinearLayout>

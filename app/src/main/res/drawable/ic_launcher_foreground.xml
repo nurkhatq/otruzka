@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Left guard bar (tall) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M20,22 L28,22 L28,86 L20,86 Z"/>
+
+    <!-- Inner bar thin -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,28 L38,28 L38,80 L34,80 Z"/>
+
+    <!-- Center bar wide -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,28 L57,28 L57,80 L44,80 Z"/>
+
+    <!-- Inner bar thin -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M63,28 L67,28 L67,80 L63,80 Z"/>
+
+    <!-- Right guard bar (tall) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M73,22 L81,22 L81,86 L73,86 Z"/>
+
+    <!-- Scan line -->
+    <path
+        android:strokeColor="#99FFFFFF"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round"
+        android:pathData="M14,54 L94,54"/>
+
+</vector>
