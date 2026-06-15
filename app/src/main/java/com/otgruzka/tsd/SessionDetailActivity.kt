@@ -3,6 +3,10 @@ package com.otgruzka.tsd
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -29,6 +33,10 @@ class SessionDetailActivity : AppCompatActivity() {
     private var totalScans = 0
     private var isLoadingScans = false
     private var currentFilter: String? = null
+    private var currentSearch: String? = null
+
+    private val searchHandler = Handler(Looper.getMainLooper())
+    private var searchRunnable: Runnable? = null
 
     // filter pill buttons: tag -> button
     private val filterButtons = mutableMapOf<String?, TextView>()
@@ -109,6 +117,34 @@ class SessionDetailActivity : AppCompatActivity() {
         // Stats grid placeholder
         val statsPlaceholder = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         inner.addView(statsPlaceholder)
+
+        // Search field
+        val etSearch = EditText(this).apply {
+            hint = "Поиск по номеру заказа"
+            textSize = 14f
+            setTextColor(Color.parseColor("#1A1A1A"))
+            setHintTextColor(Color.parseColor("#BCBAC8"))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.WHITE); cornerRadius = dp(10).toFloat()
+            }
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setSingleLine(true)
+            addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(s: Editable?) {
+                    searchRunnable?.let { searchHandler.removeCallbacks(it) }
+                    searchRunnable = Runnable {
+                        currentSearch = s?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        resetScans()
+                    }
+                    searchHandler.postDelayed(searchRunnable!!, 400)
+                }
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            })
+        }
+        inner.addView(etSearch, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(12); bottomMargin = dp(4) })
 
         // Filter pills card
         val filterCard = buildFilterCard()
@@ -345,7 +381,6 @@ class SessionDetailActivity : AppCompatActivity() {
 
     private fun onFilterSelected(tag: String?) {
         currentFilter = tag
-        // Update pill styles
         filterButtons.forEach { (k, btn) ->
             val isActive = k == tag
             btn.setTypeface(null, if (isActive) Typeface.BOLD else Typeface.NORMAL)
@@ -354,7 +389,10 @@ class SessionDetailActivity : AppCompatActivity() {
                 if (isActive) Color.parseColor("#5956E8") else Color.parseColor("#F0EFFC")
             )
         }
-        // Reset and reload scans
+        resetScans()
+    }
+
+    private fun resetScans() {
         currentPage = 0
         totalScans = 0
         scanListContainer.removeAllViews()
@@ -374,7 +412,8 @@ class SessionDetailActivity : AppCompatActivity() {
                     batchId = batchId,
                     page = currentPage,
                     pageSize = pageSize,
-                    scanResult = currentFilter
+                    scanResult = currentFilter,
+                    search = currentSearch,
                 )
                 totalScans = resp.total
                 currentPage++

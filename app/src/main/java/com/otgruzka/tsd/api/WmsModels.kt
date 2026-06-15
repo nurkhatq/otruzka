@@ -113,6 +113,12 @@ data class KaspiOrder(
 
 data class UserItem(val id: Int, val full_name: String, val warehouse_id: Int)
 
+data class SessionDateItem(
+    val date: String,
+    val session_count: Int,
+    val total_orders: Int,
+)
+
 data class CreateSessionBody(val notes: String? = null)
 
 data class SessionScan(

@@ -61,6 +61,11 @@ interface WmsApi {
     @GET("users/list")
     suspend fun getUsersList(): List<UserItem>
 
+    @GET("sessions/dates")
+    suspend fun getSessionDates(
+        @Query("warehouse_id") warehouseId: Int? = null
+    ): List<SessionDateItem>
+
     @GET("sessions/{batchId}/stats")
     suspend fun getSessionStats(@Path("batchId") batchId: String): SessionStats
 
@@ -69,6 +74,7 @@ interface WmsApi {
         @Path("batchId") batchId: String,
         @Query("page") page: Int = 0,
         @Query("page_size") pageSize: Int = 50,
-        @Query("scan_result") scanResult: String? = null
+        @Query("scan_result") scanResult: String? = null,
+        @Query("search") search: String? = null,
     ): SessionScansResponse
 }
