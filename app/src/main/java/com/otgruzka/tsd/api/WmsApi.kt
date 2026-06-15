@@ -24,10 +24,16 @@ interface WmsApi {
     ): WmsSession
 
     @POST("scan/lock")
-    suspend fun scanLock(@Body request: ScanRequest): ScanResult
+    suspend fun scanLock(@Body body: ScanLockRequest): ScanLockResponse
 
-    @DELETE("scan/lock/{code}")
-    suspend fun releaseLock(@Path("code") code: String): Map<String, Boolean>
+    @DELETE("scan/lock/{orderCode}")
+    suspend fun releaseLock(@Path("orderCode") code: String): Map<String, Boolean>
+
+    @POST("scan/create-demands")
+    suspend fun createDemands(@Body body: CreateDemandsRequest): CreateDemandsResponse
+
+    @POST("scan/cache-refresh")
+    suspend fun refreshCache(): Map<String, Int>
 
     @GET("orders/")
     suspend fun getOrders(
@@ -41,6 +47,25 @@ interface WmsApi {
     @GET("sessions/")
     suspend fun getSessions(
         @Query("page") page: Int = 0,
-        @Query("page_size") pageSize: Int = 20
-    ): List<WmsSession>
+        @Query("page_size") pageSize: Int = 20,
+        @Query("warehouse_id") warehouseId: Int? = null,
+        @Query("user_id") userId: Int? = null,
+        @Query("search") search: String? = null,
+        @Query("date_from") dateFrom: String? = null,
+        @Query("date_to") dateTo: String? = null,
+    ): SessionListResponse
+
+    @GET("users/list")
+    suspend fun getUsersList(): List<UserItem>
+
+    @GET("sessions/{batchId}/stats")
+    suspend fun getSessionStats(@Path("batchId") batchId: String): SessionStats
+
+    @GET("sessions/{batchId}/scans")
+    suspend fun getSessionScans(
+        @Path("batchId") batchId: String,
+        @Query("page") page: Int = 0,
+        @Query("page_size") pageSize: Int = 50,
+        @Query("scan_result") scanResult: String? = null
+    ): SessionScansResponse
 }

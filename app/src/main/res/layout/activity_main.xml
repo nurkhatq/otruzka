@@ -4,19 +4,20 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/background"
-    android:paddingLeft="20dp"
-    android:paddingRight="20dp"
-    android:paddingTop="0dp"
-    android:paddingBottom="20dp"
     android:fitsSystemWindows="true">
 
+    <!-- Top bar -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:layout_marginTop="12dp"
-        android:layout_marginBottom="16dp">
+        android:background="@color/surface"
+        android:elevation="3dp"
+        android:paddingLeft="20dp"
+        android:paddingRight="12dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp">
 
         <LinearLayout
             android:layout_width="0dp"
@@ -25,115 +26,237 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/tvUser"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="ОТГРУЗКИ"
-                android:textSize="30sp"
+                android:textSize="15sp"
                 android:textStyle="bold"
                 android:textColor="@color/on_background"
-                android:letterSpacing="0.02"/>
+                android:letterSpacing="0.01"/>
 
             <TextView
-                android:id="@+id/tvTsdId"
+                android:id="@+id/tvSession"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:textColor="@color/secondary"
-                android:letterSpacing="0.04"/>
+                android:letterSpacing="0.04"
+                android:layout_marginTop="2dp"/>
         </LinearLayout>
 
         <TextView
             android:id="@+id/tvHistory"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="История →"
+            android:text="История"
             android:textSize="13sp"
             android:textColor="@color/primary"
-            android:padding="8dp"/>
+            android:padding="10dp"/>
+
+        <TextView
+            android:id="@+id/tvLogout"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Выйти"
+            android:textSize="13sp"
+            android:textColor="@color/error"
+            android:padding="10dp"/>
     </LinearLayout>
 
+    <!-- Tab bar -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:background="@drawable/card_bg"
-        android:elevation="3dp"
-        android:padding="20dp"
-        android:layout_marginBottom="16dp">
+        android:orientation="horizontal"
+        android:background="@color/surface"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp">
 
         <TextView
-            android:layout_width="match_parent"
+            android:id="@+id/tabScan"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="СКАНИРОВАНИЕ"
-            android:textSize="11sp"
-            android:textColor="@color/secondary"
-            android:letterSpacing="0.1"
-            android:layout_marginBottom="8dp"/>
-
-        <TextView
-            android:id="@+id/tvScanBuffer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="22sp"
+            android:layout_weight="1"
+            android:text="Сканирование"
+            android:textSize="13sp"
             android:textStyle="bold"
-            android:textColor="@color/primary"
-            android:hint="ожидание сканирования"
-            android:textColorHint="@color/secondary"/>
+            android:gravity="center"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"/>
 
         <TextView
-            android:id="@+id/tvCacheStatus"
-            android:layout_width="match_parent"
+            android:id="@+id/tabPickup"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="Загрузка кэша..."
-            android:textSize="11sp"
-            android:textColor="@color/secondary"
-            android:letterSpacing="0.04"
-            android:layout_marginTop="8dp"/>
+            android:layout_weight="1"
+            android:text="Самовывоз"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"/>
     </LinearLayout>
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="01 · СПИСОК ЗАКАЗОВ"
-        android:textSize="11sp"
-        android:textColor="@color/secondary"
-        android:letterSpacing="0.08"
-        android:layout_marginBottom="12dp"/>
-
-    <ScrollView
-        android:id="@+id/svScanned"
+    <!-- Pane container -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:scrollbars="none">
+        android:layout_weight="1">
 
+        <!-- SCAN PANE -->
         <LinearLayout
-            android:id="@+id/llScannedList"
+            android:id="@+id/paneScan"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"/>
-    </ScrollView>
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="0dp">
 
-    <Button
-        android:id="@+id/btnCreate"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:layout_marginTop="10dp"
-        android:text="Создать отгрузки"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:textAllCaps="false"
-        android:textColor="@color/on_primary"
-        android:backgroundTint="@color/on_background"/>
+            <!-- Scan status card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/card_bg"
+                android:elevation="2dp"
+                android:paddingLeft="18dp"
+                android:paddingRight="12dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp"
+                android:layout_marginBottom="12dp">
 
-    <Button
-        android:id="@+id/btnClear"
-        android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:text="Сброс"
-        android:textSize="14sp"
-        android:textAllCaps="false"
-        android:textColor="@color/secondary"
-        android:backgroundTint="@android:color/transparent"
-        android:elevation="0dp"/>
+                <TextView
+                    android:id="@+id/tvScanBuffer"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/primary"
+                    android:hint="ожидание сканирования…"
+                    android:textColorHint="@color/secondary"/>
+
+                <Button
+                    android:id="@+id/btnClear"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Стереть"
+                    android:textSize="12sp"
+                    android:textAllCaps="false"
+                    android:textColor="@color/error"
+                    android:backgroundTint="@color/background"
+                    android:paddingLeft="14dp"
+                    android:paddingRight="14dp"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="СПИСОК ЗАКАЗОВ"
+                android:textSize="10sp"
+                android:textColor="@color/secondary"
+                android:letterSpacing="0.1"
+                android:layout_marginBottom="10dp"/>
+
+            <ScrollView
+                android:id="@+id/svScan"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/llScanList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="8dp"/>
+            </ScrollView>
+
+            <Button
+                android:id="@+id/btnCreate"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="12dp"
+                android:text="Создать отгрузки"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:textColor="@color/on_primary"
+                android:backgroundTint="@color/on_background"
+                android:enabled="false"/>
+        </LinearLayout>
+
+        <!-- PICKUP PANE -->
+        <LinearLayout
+            android:id="@+id/panePickup"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/card_bg"
+                android:elevation="2dp"
+                android:paddingLeft="18dp"
+                android:paddingRight="12dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:id="@+id/tvPickupStatus"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Загрузка самовывозов…"
+                    android:textSize="13sp"
+                    android:textColor="@color/secondary"/>
+
+                <Button
+                    android:id="@+id/btnPickupRefresh"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="↻"
+                    android:textSize="16sp"
+                    android:textAllCaps="false"
+                    android:textColor="@color/primary"
+                    android:backgroundTint="@android:color/transparent"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="ЗАКАЗЫ САМОВЫВОЗА"
+                android:textSize="10sp"
+                android:textColor="@color/secondary"
+                android:letterSpacing="0.1"
+                android:layout_marginBottom="10dp"/>
+
+            <ScrollView
+                android:id="@+id/svPickup"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/llPickupList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"/>
+            </ScrollView>
+        </LinearLayout>
+
+    </FrameLayout>
+
 </LinearLayout>
