@@ -100,8 +100,15 @@ class LoginActivity : AppCompatActivity() {
                 WmsAuth.save(this@LoginActivity, resp.access_token, resp.user)
                 WmsApiClient.reset()
                 startMain()
+            } catch (e: retrofit2.HttpException) {
+                val msg = try {
+                    val body = e.response()?.errorBody()?.string() ?: ""
+                    org.json.JSONObject(body).optString("detail", "Ошибка входа")
+                } catch (_: Exception) { "Ошибка входа" }
+                showError(msg)
+                btnLogin.isEnabled = true; btnLogin.text = "Войти"
             } catch (e: Exception) {
-                showError("Неверный логин или пароль")
+                showError(e.message ?: "Нет соединения")
                 btnLogin.isEnabled = true; btnLogin.text = "Войти"
             }
         }
