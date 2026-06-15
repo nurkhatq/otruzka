@@ -30,7 +30,10 @@ interface WmsApi {
     suspend fun releaseLock(@Path("orderCode") code: String): Map<String, Boolean>
 
     @POST("scan/create-demands")
-    suspend fun createDemands(@Body body: CreateDemandsRequest): CreateDemandsResponse
+    suspend fun createDemands(@Body body: CreateDemandsRequest): DemandJobResponse
+
+    @GET("scan/demand-job/{jobId}")
+    suspend fun getDemandJob(@Path("jobId") jobId: String): DemandJobResponse
 
     @POST("scan/cache-refresh")
     suspend fun refreshCache(): Map<String, Int>

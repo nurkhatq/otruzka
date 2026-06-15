@@ -88,6 +88,14 @@ data class DemandResult(
 
 data class CreateDemandsResponse(val results: List<DemandResult>)
 
+data class DemandJobResponse(
+    val job_id: String?,
+    val status: String,   // PROCESSING | DONE | ERROR | NOT_FOUND
+    val done: Int,
+    val total: Int,
+    val results: List<DemandResult>? = null
+)
+
 data class KaspiOrder(
     val order_code: String,
     val kaspi_status: String,
