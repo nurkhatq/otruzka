@@ -1,10 +1,11 @@
 package com.otgruzka.tsd
 
-enum class ScanStatus { CHECKING, READY, SHIPPED, NOT_FOUND }
+import com.otgruzka.tsd.api.KaspiOrder
+import com.otgruzka.tsd.api.WmsSession
 
 object ScanCache {
-    val orderNameStatus = mutableMapOf<String, Boolean>()
-    var isLoaded = false
-    var isLoading = false
-    var pendingOrders = emptyList<String>()
+    var currentSession: WmsSession? = null
+    var pickupOrders: List<KaspiOrder> = emptyList()
+    var pickupLoaded: Boolean = false
+    var confirmedPickups: MutableSet<String> = mutableSetOf()
 }

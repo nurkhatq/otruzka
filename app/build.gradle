@@ -20,7 +20,8 @@ android {
         versionCode 1
         versionName "1.0"
 
-        buildConfigField "String", "MOYSKLAD_TOKEN", "\"${localProps['MOYSKLAD_TOKEN'] ?: ''}\""
+        versionCode 2
+        versionName "2.0"
     }
 
     buildFeatures {

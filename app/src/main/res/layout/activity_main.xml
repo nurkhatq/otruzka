@@ -10,16 +10,47 @@
     android:paddingBottom="20dp"
     android:fitsSystemWindows="true">
 
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="ОТГРУЗКИ"
-        android:textSize="30sp"
-        android:textStyle="bold"
-        android:textColor="@color/on_background"
-        android:letterSpacing="0.02"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:layout_marginTop="12dp"
-        android:layout_marginBottom="16dp"/>
+        android:layout_marginBottom="16dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ОТГРУЗКИ"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:textColor="@color/on_background"
+                android:letterSpacing="0.02"/>
+
+            <TextView
+                android:id="@+id/tvTsdId"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="@color/secondary"
+                android:letterSpacing="0.04"/>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvHistory"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="История →"
+            android:textSize="13sp"
+            android:textColor="@color/primary"
+            android:padding="8dp"/>
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
