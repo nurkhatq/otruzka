@@ -231,7 +231,7 @@ class MainActivity : AppCompatActivity() {
         val batchId = ScanCache.currentSession?.batch_id ?: ""
         scanItems[code] = ScannedItem(code, ScanStatus.CHECKING)
         refreshScanList()
-        svScan.post { svScan.fullScroll(View.FOCUS_DOWN) }
+        svScan.post { svScan.fullScroll(View.FOCUS_UP) }
 
         lifecycleScope.launch {
             try {
@@ -274,7 +274,7 @@ class MainActivity : AppCompatActivity() {
             refreshScanList()
             updateCreateButton()
             updateSessionLabel()
-            svScan.post { svScan.fullScroll(View.FOCUS_DOWN) }
+            svScan.post { svScan.fullScroll(View.FOCUS_UP) }
         }
     }
 

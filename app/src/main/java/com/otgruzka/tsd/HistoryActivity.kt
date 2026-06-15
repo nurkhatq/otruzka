@@ -285,7 +285,13 @@ class HistoryActivity : AppCompatActivity() {
 
                 tvCounter.text = if (totalCount > 0) "$totalCount смен" else ""
 
+                var lastDate = ""
                 resp.items.forEach { s ->
+                    val dateStr = formatDate(s.started_at)
+                    if (dateStr != lastDate) {
+                        lastDate = dateStr
+                        sessionList.addView(buildDateHeader(dateStr))
+                    }
                     sessionList.addView(buildCard(s))
                     sessionList.addView(spacer(dp(8)))
                 }
@@ -408,6 +414,40 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun buildDateHeader(dateStr: String): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(14), dp(4), dp(6))
+            addView(View(this@HistoryActivity).apply {
+                setBackgroundColor(Color.parseColor("#D0CCC4"))
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(1)).apply { rightMargin = dp(10) }
+            })
+            addView(TextView(this@HistoryActivity).apply {
+                text = dateStr
+                textSize = 11f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor("#9896A8"))
+                letterSpacing = 0.06f
+            })
+            addView(View(this@HistoryActivity).apply {
+                setBackgroundColor(Color.parseColor("#D0CCC4"))
+                layoutParams = LinearLayout.LayoutParams(0, dp(1), 1f).apply { leftMargin = dp(10) }
+            })
+        }
+    }
+
+    private fun formatDate(isoStr: String): String {
+        return try {
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale("ru"))
+            sdf.timeZone = TimeZone.getTimeZone("UTC")
+            val date = sdf.parse(isoStr) ?: return isoStr.take(10)
+            val out = SimpleDateFormat("dd.MM.yyyy", Locale("ru"))
+            out.timeZone = TimeZone.getDefault()
+            out.format(date)
+        } catch (_: Exception) { isoStr.take(10) }
+    }
 
     private fun formatDateTime(isoStr: String): String {
         return try {
