@@ -27,6 +27,7 @@ class MainActivity : AppCompatActivity() {
     // Views
     private lateinit var tvUser: TextView
     private lateinit var tvSession: TextView
+    private lateinit var tvEndShift: TextView
     private lateinit var tabScan: TextView
     private lateinit var tabPickup: TextView
     private lateinit var paneScan: View
@@ -82,9 +83,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindViews() {
-        tvUser    = findViewById(R.id.tvUser)
-        tvSession = findViewById(R.id.tvSession)
-        tabScan   = findViewById(R.id.tabScan)
+        tvUser     = findViewById(R.id.tvUser)
+        tvSession  = findViewById(R.id.tvSession)
+        tvEndShift = findViewById(R.id.tvEndShift)
+        tabScan    = findViewById(R.id.tabScan)
         tabPickup = findViewById(R.id.tabPickup)
         paneScan  = findViewById(R.id.paneScan)
         panePickup = findViewById(R.id.panePickup)
@@ -96,6 +98,7 @@ class MainActivity : AppCompatActivity() {
         svPickup       = findViewById(R.id.svPickup)
         btnCreate      = findViewById(R.id.btnCreate)
 
+        tvEndShift.setOnClickListener { confirmEndShift() }
         findViewById<TextView>(R.id.tvHistory).setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
         }
@@ -532,6 +535,45 @@ class MainActivity : AppCompatActivity() {
                     else -> {}
                 }
             } catch (_: Exception) {}
+        }
+    }
+
+    // ─── End shift ───────────────────────────────────────────────────────────
+
+    private fun confirmEndShift() {
+        val batchId = ScanCache.currentSession?.batch_id ?: run {
+            toast("Нет активной смены"); return
+        }
+        val count = ScanCache.currentSession?.order_count ?: 0
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Завершить смену")
+            .setMessage("Смена будет закрыта ($count заказов) и появится в истории.")
+            .setPositiveButton("Завершить") { _, _ -> endShift(batchId) }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun endShift(batchId: String) {
+        lifecycleScope.launch {
+            try {
+                api.updateSession(batchId, "COMPLETED")
+                ScanCache.currentSession = null
+                scanItems.clear()
+                refreshScanList()
+                updateCreateButton()
+                ScanCache.confirmedPickups.clear()
+                toast("Смена завершена и сохранена в истории")
+                // Start a fresh session
+                try {
+                    val newSession = api.createSession(CreateSessionBody())
+                    ScanCache.currentSession = newSession
+                    tvSession.text = "Новая смена · собрано 0"
+                } catch (_: Exception) {
+                    tvSession.text = "Нет активной смены"
+                }
+            } catch (e: Exception) {
+                toast("Ошибка завершения: ${e.message?.take(60)}")
+            }
         }
     }
 
