@@ -39,5 +39,14 @@
             android:name=".SessionDetailActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".InventoryActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
+        <activity
+            android:name=".InvHistoryActivity"
+            android:exported="false" />
+
     </application>
 </manifest>

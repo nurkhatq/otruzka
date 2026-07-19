@@ -1,13 +1,19 @@
 package com.otgruzka.tsd
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
@@ -37,6 +43,18 @@ class SessionDetailActivity : AppCompatActivity() {
 
     private val searchHandler = Handler(Looper.getMainLooper())
     private var searchRunnable: Runnable? = null
+    private var etSearch: EditText? = null
+    private val barcodeBuf = StringBuilder()
+
+    private val scanReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val barcode = intent.getStringExtra("scandata")
+                ?: intent.getStringExtra("data")
+                ?: intent.getStringExtra("SCAN_RESULT")
+                ?: return
+            setSearchText(barcode.trim())
+        }
+    }
 
     // filter pill buttons: tag -> button
     private val filterButtons = mutableMapOf<String?, TextView>()
@@ -119,7 +137,7 @@ class SessionDetailActivity : AppCompatActivity() {
         inner.addView(statsPlaceholder)
 
         // Search field
-        val etSearch = EditText(this).apply {
+        etSearch = EditText(this).apply {
             hint = "Поиск по номеру заказа"
             textSize = 14f
             setTextColor(Color.parseColor("#1A1A1A"))
@@ -142,7 +160,7 @@ class SessionDetailActivity : AppCompatActivity() {
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             })
         }
-        inner.addView(etSearch, LinearLayout.LayoutParams(
+        inner.addView(etSearch!!, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(12); bottomMargin = dp(4) })
 
@@ -200,6 +218,54 @@ class SessionDetailActivity : AppCompatActivity() {
         }
 
         loadScansPage()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val filter = IntentFilter().apply {
+            addAction("com.android.scanner.broadcast")
+            addAction("nlscan.action.SCANNER_RESULT")
+            addAction("com.sunmi.scan")
+            addAction("com.honeywell.decode.intent.action.EDIT_DATA")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            registerReceiver(scanReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(scanReceiver, filter)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try { unregisterReceiver(scanReceiver) } catch (_: Exception) {}
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val ch = event.unicodeChar.toChar()
+            when {
+                event.keyCode == KeyEvent.KEYCODE_ENTER && barcodeBuf.isNotEmpty() -> {
+                    val raw = barcodeBuf.toString().trim()
+                    barcodeBuf.clear()
+                    setSearchText(raw)
+                    return true
+                }
+                ch > ' ' -> {
+                    barcodeBuf.append(ch)
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun setSearchText(raw: String) {
+        val code = raw.replace(Regex("-\\d+$"), "")
+        etSearch?.apply {
+            setText(code)
+            setSelection(code.length)
+        }
     }
 
     private fun buildHeaderCard(stats: SessionStats): View {
@@ -271,15 +337,15 @@ class SessionDetailActivity : AppCompatActivity() {
 
         val totalScanned = stats.total_scanned
         val shipped = stats.by_demand["CREATED"] ?: 0
+        val notInMs = stats.by_demand["NOT_IN_MS"] ?: 0
         val success = stats.by_result["SUCCESS"] ?: 0
-        val kaspiOnly = stats.by_result["KASPI_ONLY"] ?: 0
         val alreadyLocked = stats.by_result["ALREADY_LOCKED"] ?: 0
         val notFound = stats.by_result["NOT_FOUND"] ?: 0
 
-        gridRow1.addView(statCard("Всего сканов", totalScanned, Color.parseColor("#5956E8")))
+        gridRow1.addView(statCard("Всего заказов", totalScanned, Color.parseColor("#5956E8")))
         gridRow1.addView(statCard("Отгружено", shipped, Color.parseColor("#1A6B36")))
         gridRow2.addView(statCard("Готово", success, Color.parseColor("#2E8B57")))
-        gridRow2.addView(statCard("Нет в МС", kaspiOnly, Color.parseColor("#D96000")))
+        gridRow2.addView(statCard("Нет в МС", notInMs, Color.parseColor("#D96000")))
         gridRow3.addView(statCard("Занят ТСД", alreadyLocked, Color.parseColor("#D4A000")))
         gridRow3.addView(statCard("Не найден", notFound, Color.parseColor("#9896A8")))
 

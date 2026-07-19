@@ -97,7 +97,7 @@ class LoginActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val resp = api.login(username, password)
-                WmsAuth.save(this@LoginActivity, resp.access_token, resp.user)
+                WmsAuth.save(this@LoginActivity, resp.access_token, resp.user, password)
                 WmsApiClient.reset()
                 startMain()
             } catch (e: retrofit2.HttpException) {

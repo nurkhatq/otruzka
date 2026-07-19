@@ -18,6 +18,8 @@ data class WmsSession(
     val batch_id: String,
     val status: String,
     val order_count: Int,
+    val shipped_count: Int = 0,
+    val scan_count: Int = 0,
     val started_at: String,
     val completed_at: String? = null,
     val warehouse_id: Int = 0,
@@ -117,9 +119,89 @@ data class SessionDateItem(
     val date: String,
     val session_count: Int,
     val total_orders: Int,
+    val shipped_count: Int = 0,
 )
 
 data class CreateSessionBody(val notes: String? = null)
+
+// ─── Inventory models ─────────────────────────────────────────────────────────
+
+data class InvSession(
+    val session_id: String,
+    val warehouse_id: Int,
+    val status: String,
+    val notes: String? = null,
+    val started_at: String,
+    val completed_at: String? = null,
+    val created_by_name: String? = null,
+    val total: Int? = null
+)
+
+data class InvSessionStats(
+    val session_id: String,
+    val status: String,
+    val warehouse_id: Int,
+    val created_by_name: String?,
+    val started_at: String,
+    val completed_at: String?,
+    val duration_sec: Int?,
+    val total: Int,
+    val by_status: Map<String, Int>
+)
+
+data class InvScanItem(
+    val id: Int,
+    val barcode: String,
+    val product_name: String?,
+    val ms_stock: Double?,
+    val counter_name: String?,
+    val counter_qty: Int,
+    val counter_at: String?,
+    val verifier_name: String?,
+    val verifier_qty: Int?,
+    val verifier_at: String?,
+    val status: String,
+    val notes: String?
+)
+
+data class InvItemsResponse(
+    val total: Int,
+    val page: Int,
+    val page_size: Int,
+    val items: List<InvScanItem>
+)
+
+data class InvSessionsResponse(
+    val total: Int,
+    val page: Int,
+    val page_size: Int,
+    val items: List<InvSession>
+)
+
+data class InvProductInfo(
+    val barcode: String,
+    val product_name: String?,
+    val ms_stock: Double?
+)
+
+data class InvScanBody(
+    val session_id: String,
+    val barcode: String,
+    val quantity: Int,
+    val notes: String? = null
+)
+
+data class InvScanResponse(
+    val id: Int,
+    val barcode: String,
+    val product_name: String?,
+    val ms_stock: Double?,
+    val counter_qty: Int,
+    val verifier_qty: Int?,
+    val status: String,   // PENDING | MATCHED | VERIFIED | DISCREPANCY
+    val role: String,     // counter | recount | verifier
+    val message: String
+)
 
 data class SessionScan(
     val order_code: String,

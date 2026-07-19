@@ -7,15 +7,19 @@ object WmsAuth {
 
     private const val PREFS = "wms_auth"
 
-    fun save(context: Context, token: String, user: WmsUser) {
+    fun save(context: Context, token: String, user: WmsUser, password: String? = null) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString("token", token)
             .putString("username", user.username)
             .putString("full_name", user.full_name)
             .putInt("warehouse_id", user.warehouse_id)
             .putString("role", user.role)
+            .also { if (password != null) it.putString("password", password) }
             .apply()
     }
+
+    fun getPassword(context: Context): String? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("password", null)
 
     fun getToken(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("token", null)

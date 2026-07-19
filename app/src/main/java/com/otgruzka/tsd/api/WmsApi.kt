@@ -77,4 +77,53 @@ interface WmsApi {
         @Query("scan_result") scanResult: String? = null,
         @Query("search") search: String? = null,
     ): SessionScansResponse
+
+    // ─── Inventory ────────────────────────────────────────────────────────────
+
+    @POST("inventory/sessions")
+    suspend fun createInvSession(@Body body: CreateSessionBody): InvSession
+
+    @GET("inventory/sessions/active")
+    suspend fun getActiveInvSession(): InvSession?
+
+    @PATCH("inventory/sessions/{sessionId}")
+    suspend fun updateInvSession(
+        @Path("sessionId") sessionId: String,
+        @Query("status") status: String
+    ): Map<String, String>
+
+    @GET("inventory/sessions/{sessionId}/stats")
+    suspend fun getInvSessionStats(@Path("sessionId") sessionId: String): InvSessionStats
+
+    @GET("inventory/sessions/{sessionId}/items")
+    suspend fun getInvSessionItems(
+        @Path("sessionId") sessionId: String,
+        @Query("page") page: Int = 0,
+        @Query("page_size") pageSize: Int = 50,
+        @Query("status") status: String? = null,
+        @Query("search") search: String? = null,
+    ): InvItemsResponse
+
+    @GET("inventory/product")
+    suspend fun getInvProduct(@Query("barcode") barcode: String): InvProductInfo
+
+    @POST("inventory/scan")
+    suspend fun invScan(@Body body: InvScanBody): InvScanResponse
+
+    @DELETE("inventory/scan/{scanId}")
+    suspend fun deleteInvScan(@Path("scanId") scanId: Int): Map<String, Int>
+
+    @GET("inventory/sessions")
+    suspend fun getInvSessions(
+        @Query("page") page: Int = 0,
+        @Query("page_size") pageSize: Int = 20,
+    ): InvSessionsResponse
+
+    @GET("inventory/sessions/{sessionId}/items")
+    suspend fun getInvSessionItems(
+        @Path("sessionId") sessionId: String,
+        @Query("page") page: Int = 0,
+        @Query("page_size") pageSize: Int = 100,
+        @Query("status") status: String? = null,
+    ): InvItemsResponse
 }

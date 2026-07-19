@@ -102,6 +102,9 @@ class MainActivity : AppCompatActivity() {
         btnCreate      = findViewById(R.id.btnCreate)
 
         tvEndShift.setOnClickListener { confirmEndShift() }
+        findViewById<TextView>(R.id.tvInventory).setOnClickListener {
+            startActivity(Intent(this, InventoryActivity::class.java))
+        }
         findViewById<TextView>(R.id.tvHistory).setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
         }
@@ -171,15 +174,39 @@ class MainActivity : AppCompatActivity() {
         tvSession.text = "Подключение…"
         lifecycleScope.launch {
             try {
-                val session = runCatching { api.getActiveSession() }.getOrNull()
-                    ?: api.createSession(CreateSessionBody())
+                val existing = runCatching { api.getActiveSession() }.getOrNull()
+                val session = existing ?: api.createSession(CreateSessionBody())
                 ScanCache.currentSession = session
+                if (existing != null && existing.order_count > 0) {
+                    restoreFromSession(existing.batch_id)
+                }
                 updateCreateButton()
-                tvSession.text = "Смена · собрано 0"
+                updateSessionLabel()
             } catch (e: Exception) {
                 tvSession.text = "Нет связи: ${e.message?.take(40)}"
             }
         }
+    }
+
+    private suspend fun restoreFromSession(batchId: String) {
+        try {
+            val scans = api.getSessionScans(batchId, pageSize = 200)
+            scans.items
+                .filter { it.demand_status == null && (it.scan_result == "SUCCESS" || it.scan_result == "KASPI_ONLY") }
+                .forEach { scan ->
+                    val status = if (scan.scan_result == "KASPI_ONLY") ScanStatus.KASPI_ONLY else ScanStatus.READY
+                    scanItems[scan.order_code] = ScannedItem(
+                        code = scan.order_code,
+                        status = status,
+                        customerName = scan.customer_name,
+                        totalPrice = scan.total_price ?: 0.0,
+                    )
+                }
+            if (scanItems.isNotEmpty()) {
+                refreshScanList()
+                toast("Восстановлено ${scanItems.size} заказов из предыдущей смены")
+            }
+        } catch (_: Exception) {}
     }
 
     private fun updateCreateButton() {
@@ -619,27 +646,34 @@ class MainActivity : AppCompatActivity() {
     // ─── Logout ──────────────────────────────────────────────────────────────
 
     private fun doLogout() {
+        val batchId = ScanCache.currentSession?.batch_id
         val lockedCodes = scanItems.values
             .filter { it.status == ScanStatus.READY || it.status == ScanStatus.KASPI_ONLY }
             .map { it.code }
-
-        if (lockedCodes.isNotEmpty()) {
-            android.app.AlertDialog.Builder(this)
-                .setTitle("Выход из аккаунта")
-                .setMessage("В списке ${lockedCodes.size} заказов с активными замками. Освободить их?")
-                .setPositiveButton("Освободить и выйти") { _, _ ->
-                    lifecycleScope.launch {
-                        lockedCodes.forEach { code ->
-                            try { api.releaseLock(code) } catch (_: Exception) {}
-                        }
-                        performLogout()
+        val msg = if (lockedCodes.isNotEmpty())
+            "${lockedCodes.size} заказов отсканировано. Сохранить для следующего входа или очистить?"
+        else
+            "Выйти из аккаунта?"
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Выход из аккаунта")
+            .setMessage(msg)
+            .setPositiveButton("Сохранить") { _, _ ->
+                // Session stays ACTIVE in DB, locks stay in Redis
+                performLogout()
+            }
+            .setNeutralButton("Очистить") { _, _ ->
+                lifecycleScope.launch {
+                    lockedCodes.forEach { code ->
+                        try { api.releaseLock(code) } catch (_: Exception) {}
                     }
+                    if (batchId != null) {
+                        try { api.updateSession(batchId, "CANCELLED") } catch (_: Exception) {}
+                    }
+                    performLogout()
                 }
-                .setNegativeButton("Выйти, оставить замки") { _, _ -> performLogout() }
-                .show()
-        } else {
-            performLogout()
-        }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
     }
 
     private fun performLogout() {

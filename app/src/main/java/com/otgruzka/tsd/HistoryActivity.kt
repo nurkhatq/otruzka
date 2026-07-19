@@ -1,14 +1,19 @@
 package com.otgruzka.tsd
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
@@ -48,6 +53,18 @@ class HistoryActivity : AppCompatActivity() {
 
     private val searchHandler = Handler(Looper.getMainLooper())
     private var searchRunnable: Runnable? = null
+    private var etSearch: EditText? = null
+    private val barcodeBuf = StringBuilder()
+
+    private val scanReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val barcode = intent.getStringExtra("scandata")
+                ?: intent.getStringExtra("data")
+                ?: intent.getStringExtra("SCAN_RESULT")
+                ?: return
+            setSearchText(barcode.trim())
+        }
+    }
 
     private val warehouseList = listOf(
         0 to "Все склады",
@@ -117,11 +134,62 @@ class HistoryActivity : AppCompatActivity() {
         if (viewMode == ViewMode.SESSION_LIST) showDateList() else finish()
     }
 
+    override fun onResume() {
+        super.onResume()
+        val filter = IntentFilter().apply {
+            addAction("com.android.scanner.broadcast")
+            addAction("nlscan.action.SCANNER_RESULT")
+            addAction("com.sunmi.scan")
+            addAction("com.honeywell.decode.intent.action.EDIT_DATA")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            registerReceiver(scanReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(scanReceiver, filter)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try { unregisterReceiver(scanReceiver) } catch (_: Exception) {}
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val ch = event.unicodeChar.toChar()
+            when {
+                event.keyCode == KeyEvent.KEYCODE_ENTER && barcodeBuf.isNotEmpty() -> {
+                    val raw = barcodeBuf.toString().trim()
+                    barcodeBuf.clear()
+                    setSearchText(raw)
+                    return true
+                }
+                ch > ' ' -> {
+                    barcodeBuf.append(ch)
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun setSearchText(raw: String) {
+        if (viewMode != ViewMode.SESSION_LIST) return
+        val code = raw.replace(Regex("-\\d+$"), "")
+        etSearch?.apply {
+            setText(code)
+            setSelection(code.length)
+        }
+    }
+
     // ─── DATE LIST ────────────────────────────────────────────────────────────
 
     private fun showDateList() {
         viewMode = ViewMode.DATE_LIST
         selectedDate = null
+        etSearch = null
+        barcodeBuf.clear()
         tvTitle.text = "История смен"
         contentLayout.removeAllViews()
         progressBar.visibility = View.VISIBLE
@@ -190,7 +258,7 @@ class HistoryActivity : AppCompatActivity() {
             setTextColor(Color.parseColor("#1A1A1A"))
         })
         info.addView(TextView(this).apply {
-            text = "${item.session_count} смен · ${item.total_orders} заказов"
+            text = "${item.session_count} смен · ${item.shipped_count} отгружено"
             textSize = 12f
             setTextColor(Color.parseColor("#9896A8"))
             setPadding(0, dp(3), 0, 0)
@@ -232,7 +300,7 @@ class HistoryActivity : AppCompatActivity() {
             setPadding(dp(14), dp(12), dp(14), dp(12))
         }
 
-        val etSearch = EditText(this).apply {
+        etSearch = EditText(this).apply {
             hint = "Поиск по номеру заказа или отгрузки"
             textSize = 14f
             setTextColor(Color.parseColor("#1A1A1A"))
@@ -253,7 +321,7 @@ class HistoryActivity : AppCompatActivity() {
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             })
         }
-        filterCard.addView(etSearch, lp(matchW, wrapH).apply { bottomMargin = dp(10) })
+        filterCard.addView(etSearch!!, lp(matchW, wrapH).apply { bottomMargin = dp(10) })
 
         val whAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, warehouseList.map { it.second })
         whAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -401,9 +469,17 @@ class HistoryActivity : AppCompatActivity() {
         card.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(7), 0, 0)
             addView(TextView(this@HistoryActivity).apply {
-                text = "${s.order_count} заказов"; textSize = 11f
-                setTextColor(Color.parseColor("#6B6880")); setPadding(dp(8), dp(3), dp(8), dp(3))
-                background = roundedBg(Color.parseColor("#F0EDE8"), dp(6))
+                text = "${s.scan_count} заказов"; textSize = 11f
+                setTextColor(Color.parseColor("#5956E8")); setPadding(dp(8), dp(3), dp(8), dp(3))
+                background = roundedBg(Color.parseColor("#EEEDFB"), dp(6))
+            })
+            addView(TextView(this@HistoryActivity).apply {
+                text = "${s.shipped_count} отгружено"; textSize = 11f
+                setTextColor(Color.parseColor("#1A6B36")); setPadding(dp(8), dp(3), dp(8), dp(3))
+                background = roundedBg(Color.parseColor("#E6F4EC"), dp(6))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { leftMargin = dp(6) }
             })
         })
         return card
