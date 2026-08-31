@@ -6,29 +6,31 @@
     android:background="@color/background"
     android:fitsSystemWindows="true">
 
-    <!-- Top bar -->
+    <!-- Top bar: строка юзера + строка ссылок (в одну строку не влезали) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
+        android:orientation="vertical"
         android:background="@color/surface"
         android:elevation="3dp"
         android:paddingLeft="20dp"
         android:paddingRight="12dp"
-        android:paddingTop="14dp"
-        android:paddingBottom="14dp">
+        android:paddingTop="12dp"
+        android:paddingBottom="4dp">
 
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
             <TextView
                 android:id="@+id/tvUser"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:maxLines="1"
+                android:ellipsize="end"
                 android:textSize="15sp"
                 android:textStyle="bold"
                 android:textColor="@color/on_background"
@@ -38,56 +40,79 @@
                 android:id="@+id/tvSession"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:maxLines="1"
                 android:textSize="11sp"
                 android:textColor="@color/secondary"
                 android:letterSpacing="0.04"
-                android:layout_marginTop="2dp"/>
+                android:paddingLeft="8dp"/>
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/tvEndShift"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="✓ Смена"
-            android:textSize="13sp"
-            android:textColor="@color/success"
-            android:padding="10dp"/>
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-        <TextView
-            android:id="@+id/tvPicker"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Сборка"
-            android:textSize="13sp"
-            android:textColor="@color/primary"
-            android:padding="10dp"/>
+            <TextView
+                android:id="@+id/tvEndShift"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="✓ Смена"
+                android:textSize="13sp"
+                android:textColor="@color/success"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"/>
 
-        <TextView
-            android:id="@+id/tvInventory"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Инвент."
-            android:textSize="13sp"
-            android:textColor="@color/primary"
-            android:padding="10dp"/>
+            <TextView
+                android:id="@+id/tvPicker"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="Сборка"
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"/>
 
-        <TextView
-            android:id="@+id/tvHistory"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="История"
-            android:textSize="13sp"
-            android:textColor="@color/primary"
-            android:padding="10dp"/>
+            <TextView
+                android:id="@+id/tvInventory"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="Инвент."
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"/>
 
-        <TextView
-            android:id="@+id/tvLogout"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Выйти"
-            android:textSize="13sp"
-            android:textColor="@color/error"
-            android:padding="10dp"/>
+            <TextView
+                android:id="@+id/tvHistory"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="История"
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"/>
+
+            <TextView
+                android:id="@+id/tvLogout"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="Выйти"
+                android:textSize="13sp"
+                android:textColor="@color/error"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"/>
+        </LinearLayout>
     </LinearLayout>
 
     <!-- Tab bar -->
