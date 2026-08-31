@@ -102,6 +102,11 @@ class MainActivity : AppCompatActivity() {
         btnCreate      = findViewById(R.id.btnCreate)
 
         tvEndShift.setOnClickListener { confirmEndShift() }
+        findViewById<TextView>(R.id.tvPicker).setOnClickListener {
+            val target = if (CoreAuth.isLoggedIn(this))
+                PickerTasksActivity::class.java else PickerLoginActivity::class.java
+            startActivity(Intent(this, target))
+        }
         findViewById<TextView>(R.id.tvInventory).setOnClickListener {
             startActivity(Intent(this, InventoryActivity::class.java))
         }

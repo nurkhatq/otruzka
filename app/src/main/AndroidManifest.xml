@@ -48,5 +48,24 @@
             android:name=".InvHistoryActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".PickerLoginActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".PickerTasksActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".PickerTaskActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
+        <activity
+            android:name=".PickerHistoryActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
     </application>
 </manifest>
