@@ -105,6 +105,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tvPicker).setOnClickListener {
             startActivity(Intent(this, PickerTasksActivity::class.java))
         }
+        findViewById<TextView>(R.id.tvReceiving).setOnClickListener {
+            // Приёмка отмен/возвратов — гейт по праву returns проверяет сервер
+            startActivity(Intent(this, ReturnsActivity::class.java))
+        }
         findViewById<TextView>(R.id.tvInventory).setOnClickListener {
             // Инвентаризация пока живёт на старом складе — вход отдельный
             val target = if (WmsAuth.isLoggedIn(this))

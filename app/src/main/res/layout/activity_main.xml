@@ -47,6 +47,7 @@
                 android:paddingLeft="8dp"/>
         </LinearLayout>
 
+<!-- Шесть ссылок в два ряда по три — в один ряд на узком ТСД не влезают -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -63,7 +64,7 @@
                 android:textSize="13sp"
                 android:textColor="@color/success"
                 android:paddingTop="10dp"
-                android:paddingBottom="10dp"/>
+                android:paddingBottom="6dp"/>
 
             <TextView
                 android:id="@+id/tvPicker"
@@ -75,7 +76,26 @@
                 android:textSize="13sp"
                 android:textColor="@color/primary"
                 android:paddingTop="10dp"
-                android:paddingBottom="10dp"/>
+                android:paddingBottom="6dp"/>
+
+            <TextView
+                android:id="@+id/tvReceiving"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="Приёмка"
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                android:paddingTop="10dp"
+                android:paddingBottom="6dp"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
             <TextView
                 android:id="@+id/tvInventory"
@@ -86,7 +106,7 @@
                 android:text="Инвент."
                 android:textSize="13sp"
                 android:textColor="@color/primary"
-                android:paddingTop="10dp"
+                android:paddingTop="6dp"
                 android:paddingBottom="10dp"/>
 
             <TextView
@@ -98,7 +118,7 @@
                 android:text="История"
                 android:textSize="13sp"
                 android:textColor="@color/primary"
-                android:paddingTop="10dp"
+                android:paddingTop="6dp"
                 android:paddingBottom="10dp"/>
 
             <TextView
@@ -110,7 +130,7 @@
                 android:text="Выйти"
                 android:textSize="13sp"
                 android:textColor="@color/error"
-                android:paddingTop="10dp"
+                android:paddingTop="6dp"
                 android:paddingBottom="10dp"/>
         </LinearLayout>
     </LinearLayout>

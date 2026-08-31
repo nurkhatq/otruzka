@@ -126,4 +126,36 @@ interface CoreApi {
 
     @GET("tsd/users")
     suspend fun tsdUsers(): List<TsdUser>
+
+    // ─── Приёмка отмен/возвратов (/tsd/returns) ──────────────────────────────
+
+    @POST("tsd/returns/scan-order")
+    suspend fun returnsScanOrder(@Body body: ReturnScanOrderBody): ReturnScanOrderResponse
+
+    @POST("tsd/returns/{id}/scan-item")
+    suspend fun returnsScanItem(
+        @Path("id") id: Int, @Body body: ReturnItemScanBody
+    ): ReturnItemScanResponse
+
+    @POST("tsd/returns/{id}/complete")
+    suspend fun returnsComplete(
+        @Path("id") id: Int, @Body body: ReturnCompleteBody
+    ): ReturnCompleteResponse
+
+    @POST("tsd/returns/{id}/cancel")
+    suspend fun returnsCancel(@Path("id") id: Int): Map<String, String>
+
+    @GET("tsd/returns")
+    suspend fun returnsList(
+        @Query("page") page: Int = 0,
+        @Query("page_size") pageSize: Int = 30,
+        @Query("status") status: String? = null,
+        @Query("username") username: String? = null,
+    ): ReturnsListResponse
+
+    @GET("tsd/returns/expected")
+    suspend fun returnsExpected(): List<ReturnExpectedItem>
+
+    @GET("tsd/returns/{id}")
+    suspend fun returnsGet(@Path("id") id: Int): ReturnReceiving
 }

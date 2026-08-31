@@ -234,3 +234,103 @@ data class TsdUser(
     val full_name: String,
     val city: String?
 )
+
+// ─── Приёмка отмен/возвратов (/tsd/returns) ──────────────────────────────────
+// Количества приходят строками («2», «1.5») — сервер отдаёт Numeric без нулей.
+
+data class ReturnScanOrderBody(val code: String)
+
+data class ReturnOrderBrief(
+    val order_code: String?,
+    val kaspi_status: String?,
+    val customer_name: String?,
+    val customer_phone: String?,
+    val total_price: Double?,
+    val cancellation_reason: String?,
+    val creation_date: String?
+)
+
+data class ReturnLine(
+    val line_id: Int,
+    val product_id: Long,
+    val offer_code: String?,
+    val name: String?,
+    val qty_expected: String?,
+    val qty_scanned: String?,
+    val qty_defect: String?,
+    val main_sku: String?,
+    val barcodes: List<String>?,
+    val images: List<String>?
+)
+
+data class ReturnReceiving(
+    val id: Int,
+    val order_code: String,
+    val kind: String?,          // returned | cancel_shipped
+    val status: String?,        // IN_PROGRESS | RECEIVED | CANCELLED
+    val stock_restore: Boolean,
+    val username: String?,
+    val total_expected: String?,
+    val total_scanned: String?,
+    val complete_allowed: Boolean,
+    val lines: List<ReturnLine>?,
+    val started_at: String?,
+    val completed_at: String?
+)
+
+data class ReturnCellHint(val code: String?, val zone: String?)
+
+/** NOT_SHIPPED: «что куда разложить» — заказ не покидал склад. */
+data class ReturnPutbackItem(
+    val product_id: Long,
+    val name: String?,
+    val qty: String?,
+    val cells: List<String>?
+)
+
+data class ReturnScanOrderResponse(
+    val result: String,   // OK | NOT_FOUND | NOT_SHIPPED | NOT_RETURNABLE | ALREADY_RECEIVED | LOCKED
+    val order: ReturnOrderBrief?,
+    val resumed: Boolean?,
+    val holder: String?,
+    val receiving: ReturnReceiving?,
+    val items: List<ReturnPutbackItem>?
+)
+
+data class ReturnItemScanBody(val barcode: String, val product_id: Long? = null)
+
+data class ReturnCandidate(val product_id: Long, val name: String?)
+
+data class ReturnItemScanResponse(
+    val result: String,   // MATCHED | EXCESS | UNEXPECTED | UNKNOWN | AMBIGUOUS
+    val product_id: Long?,
+    val candidates: List<ReturnCandidate>?,
+    val receiving: ReturnReceiving?
+)
+
+data class ReturnDefectLine(val line_id: Int, val qty_defect: String)
+
+data class ReturnCompleteBody(
+    val force: Boolean = false,
+    val defects: List<ReturnDefectLine> = emptyList()
+)
+
+data class ReturnCompleteResponse(
+    val status: String?,
+    val stock_restored: Boolean?,
+    val document_number: String?,
+    val good_qty: String?,
+    val defect_qty: String?
+)
+
+data class ReturnExpectedItem(
+    val order_code: String?,
+    val kaspi_status: String?,
+    val customer_name: String?,
+    val cancellation_reason: String?,
+    val creation_date: String?,
+    val incoming: Boolean?,      // возврат запрошен — ЕДЕТ к нам
+    val has_received: Boolean?   // по заказу уже есть принятая приёмка
+)
+
+data class ReturnsListResponse(val items: List<ReturnReceiving>?, val total: Int?)
