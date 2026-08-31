@@ -183,7 +183,9 @@ class MainActivity : AppCompatActivity() {
                 val existing = runCatching { api.getActiveShift() }.getOrNull()
                 val session = existing ?: api.createShift()
                 ScanCache.currentSession = session
-                if (existing != null && existing.order_count > 0) {
+                if (existing != null && existing.scan_count > 0) {
+                    // Восстанавливаем неотгруженные сканы смены — иначе после
+                    // перезахода список пустой, хотя сканы уже в ядре
                     restoreFromSession(existing.batch_id)
                 }
                 updateCreateButton()
@@ -198,7 +200,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val scans = api.getShiftScans(batchId, pageSize = 200)
             scans.items
-                .filter { it.demand_status == null && it.scan_result == "SUCCESS" }
+                .filter { it.demand_status == null && it.scan_result == "SUCCESS" && !it.released }
                 .forEach { scan ->
                     val status = ScanStatus.READY
                     scanItems[scan.order_code] = ScannedItem(

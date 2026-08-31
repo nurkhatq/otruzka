@@ -176,6 +176,7 @@ data class TsdScanItem(
     val demand_status: String?,
     val demand_name: String?,
     val lock_holder: String?,
+    val released: Boolean = false,
     val scanned_at: String
 )
 
