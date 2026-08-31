@@ -32,10 +32,12 @@ import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
 /**
- * Экран приёмки одного возврата: «СЕЙЧАС ПРИНИМАЕМ» → скан каждой вещи →
- * «Завершить» с отметкой брака (по умолчанию всё годное). Статус скана решает
- * сервер. Для возврата неполный скан — норма Kaspi («остальное у покупателя»),
- * для отмены — предупреждение. Зеркало PickerTaskActivity по дизайну.
+ * Экран приёмки одного возврата — решение ПО КАЖДОЙ ВЕЩИ сразу при скане:
+ * скан → карточка товара + две большие кнопки «БРАК» (красная) и «ВЕРНУТЬ
+ * НА СКЛАД» (зелёная, справа) → следующая вещь → когда всё принято, приёмка
+ * завершается САМА и экран закрывается (сканируй следующую коробку).
+ * Кнопки «Завершить» и диалога брака нет (решение владельца 2026-08-31).
+ * Брак пишется на сервер сразу (resume не теряет решения).
  */
 class ReturnReceiveActivity : AppCompatActivity() {
 
@@ -55,10 +57,9 @@ class ReturnReceiveActivity : AppCompatActivity() {
     private val ORANGE_BG = Color.parseColor("#FFF7ED")
     private val ORANGE_BR = Color.parseColor("#FED7AA")
     private val ORANGE_TX = Color.parseColor("#C2410C")
+    private val RED = Color.parseColor("#DC2626")
     private val RED_BG = Color.parseColor("#FEF2F2")
-    private val RED_BR = Color.parseColor("#FCA5A5")
     private val RED_TX = Color.parseColor("#991B1B")
-    private val PURPLE = Color.parseColor("#9333EA")
     private val PURPLE_BG = Color.parseColor("#FAF5FF")
     private val PURPLE_BR = Color.parseColor("#D8B4FE")
     private val PURPLE_TX = Color.parseColor("#6B21A8")
@@ -69,11 +70,15 @@ class ReturnReceiveActivity : AppCompatActivity() {
     private var rec: ReturnReceiving? = null
     private var busy = false
     private var completing = false
+
+    // Вещь, по которой ждём решения БРАК/ВЕРНУТЬ (после MATCHED-скана)
+    private var pendingLineId: Int? = null
+
     private val barcodeBuf = StringBuilder()
 
     private lateinit var tvTitle: TextView
     private lateinit var tvChip: TextView
-    private lateinit var tvCustomer: TextView
+    private lateinit var tvSubtitle: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var tvProgress: TextView
     private lateinit var tvScanBuffer: TextView
@@ -177,10 +182,10 @@ class ReturnReceiveActivity : AppCompatActivity() {
             setOnClickListener { finish() }
         })
         head.addView(row1)
-        tvCustomer = TextView(this).apply {
+        tvSubtitle = TextView(this).apply {
             textSize = 12f; setTextColor(MUTED)
         }
-        head.addView(tvCustomer)
+        head.addView(tvSubtitle)
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             progressTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#22C55E"))
         }
@@ -232,17 +237,20 @@ class ReturnReceiveActivity : AppCompatActivity() {
     private fun loadReceiving() {
         lifecycleScope.launch {
             try {
-                onReceiving(api.returnsGet(receivingId))
+                rec = api.returnsGet(receivingId)
+                render()
+                // Resume полностью отсканированной сессии: решений больше не
+                // ждём (брак уже на сервере) — завершаем сами, кнопки нет
+                if (rec?.status == "IN_PROGRESS" && allDone() && anyScanned() &&
+                    pendingLineId == null && !completing
+                ) {
+                    autoComplete()
+                }
             } catch (e: Exception) {
                 toast("Ошибка загрузки: ${e.message?.take(60)}")
                 finish()
             }
         }
-    }
-
-    private fun onReceiving(r: ReturnReceiving) {
-        rec = r
-        render()
     }
 
     // ─── Числа-строки ядра («2», «1.5») ─────────────────────────────────────
@@ -257,11 +265,19 @@ class ReturnReceiveActivity : AppCompatActivity() {
         rec?.lines.orEmpty().firstOrNull { scanned(it) < expected(it) }
     private fun allDone(): Boolean = nextPending() == null
     private fun anyScanned(): Boolean = rec?.lines.orEmpty().any { scanned(it) > 0 }
+    private fun lineById(id: Int?): ReturnLine? =
+        rec?.lines.orEmpty().firstOrNull { it.line_id == id }
 
     // ─── Scan ────────────────────────────────────────────────────────────────
 
     private fun handleBarcode(raw: String) {
         if (busy || completing || rec == null) return
+        if (pendingLineId != null) {
+            // Сначала реши по вещи в руках — потом сканируй следующую
+            Beep.warn()
+            showMsg("Сначала нажмите БРАК или ВЕРНУТЬ НА СКЛАД", ORANGE_BG, ORANGE_TX)
+            return
+        }
         val code = raw.replace(Regex("-\\d+$"), "")   // Mindeo добавляет счётчик
         scanItem(code, null)
     }
@@ -275,23 +291,27 @@ class ReturnReceiveActivity : AppCompatActivity() {
                     receivingId, ReturnItemScanBody(barcode, productId)
                 )
                 res.receiving?.let { rec = it }
-                render()
                 when (res.result) {
-                    "MATCHED" -> { Beep.ok(); showMsg("✓ Принято", GREEN_BG, GREEN_TX) }
+                    "MATCHED" -> {
+                        Beep.ok()
+                        pendingLineId = res.receiving?.lines.orEmpty()
+                            .firstOrNull { it.product_id == res.product_id }?.line_id
+                        render()
+                    }
                     "EXCESS" -> {
-                        Beep.warn()
+                        Beep.warn(); render()
                         showMsg("Уже принято нужное количество", Color.parseColor("#FEF9C3"), YELLOW_TX)
                     }
                     "UNEXPECTED" -> {
-                        Beep.error()
+                        Beep.error(); render()
                         showMsg("Товар не из этого заказа", RED_BG, RED_TX)
                     }
                     "UNKNOWN" -> {
-                        Beep.error()
+                        Beep.error(); render()
                         showMsg("Штрихкод не найден в системе", RED_BG, RED_TX)
                     }
                     "AMBIGUOUS" -> {
-                        Beep.warn()
+                        Beep.warn(); render()
                         askCandidate(barcode, res.candidates.orEmpty()
                             .map { it.product_id to (it.name ?: "товар #${it.product_id}") })
                     }
@@ -316,134 +336,70 @@ class ReturnReceiveActivity : AppCompatActivity() {
             .show()
     }
 
-    // ─── Complete ────────────────────────────────────────────────────────────
+    // ─── Решение по вещи: БРАК / ВЕРНУТЬ НА СКЛАД ────────────────────────────
 
-    /** «Завершить» → диалог брака (по умолчанию всё годное) → complete. */
-    private fun startComplete() {
-        val r = rec ?: return
-        val scannedLines = r.lines.orEmpty().filter { scanned(it) > 0 }
-        if (scannedLines.isEmpty()) { toast("Ничего не отсканировано"); return }
-
-        if (!allDone()) {
-            // Неполный скан: возврат — норма Kaspi, отмена — предупреждение
-            val missing = r.lines.orEmpty().sumOf { expected(it) - scanned(it) }
-            val isReturn = r.kind != "cancel_shipped"
-            android.app.AlertDialog.Builder(this)
-                .setTitle(if (isReturn) "Принята часть заказа" else "⚠ Не всё отсканировано")
-                .setMessage(
-                    if (isReturn)
-                        "Принято ${r.total_scanned} из ${r.total_expected}. Остальное " +
-                            "осталось у покупателя — для возвратов Kaspi это нормально. Завершить?"
-                    else
-                        "Отменённый заказ должен вернуться целиком, но ${fmtN(missing)} поз. " +
-                            "не отсканировано. Проверьте коробку ещё раз! Завершить с нехваткой?"
-                )
-                .setPositiveButton("Завершить") { _, _ -> askDefects(scannedLines, force = true) }
-                .setNegativeButton("Отмена", null)
-                .show()
-        } else {
-            askDefects(scannedLines, force = false)
+    private fun decide(defect: Boolean) {
+        val lineId = pendingLineId ?: return
+        val line = lineById(lineId) ?: return
+        if (busy) return
+        busy = true
+        lifecycleScope.launch {
+            try {
+                if (defect) {
+                    val newDefect = n(line.qty_defect) + 1
+                    val res = api.returnsLineDefect(
+                        receivingId, ReturnDefectLine(lineId, fmtN(newDefect))
+                    )
+                    rec = res.receiving ?: api.returnsGet(receivingId)
+                    Beep.warn()
+                } else {
+                    Beep.ok()
+                }
+                pendingLineId = null
+                if (allDone()) {
+                    autoComplete()
+                } else {
+                    render()
+                    showMsg(
+                        if (defect) "Брак отмечен — следующий товар"
+                        else "✓ На склад — следующий товар",
+                        if (defect) RED_BG else GREEN_BG,
+                        if (defect) RED_TX else GREEN_TX
+                    )
+                }
+            } catch (e: Exception) {
+                Beep.error()
+                showMsg("Ошибка: ${e.message?.take(60)}", RED_BG, RED_TX)
+            } finally {
+                busy = false
+            }
         }
     }
 
-    /** Диалог брака: по строке степпер «из них брак: 0». Ноль лишних действий,
-     *  если брака нет. */
-    private fun askDefects(lines: List<ReturnLine>, force: Boolean) {
-        val defects = HashMap<Int, Int>()
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(4))
-        }
-        val counters = HashMap<Int, TextView>()
-        lines.forEach { l ->
-            defects[l.line_id] = 0
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(6), 0, dp(6))
-            }
-            val col = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            col.addView(TextView(this).apply {
-                text = l.name ?: l.offer_code ?: "—"
-                textSize = 13f; maxLines = 2
-                setTextColor(TEXT)
-            })
-            col.addView(TextView(this).apply {
-                text = "принято ${l.qty_scanned ?: "0"} шт · из них брак:"
-                textSize = 11f; setTextColor(MUTED)
-            })
-            row.addView(col)
-            row.addView(TextView(this).apply {
-                text = "−"; textSize = 20f; setTextColor(RED_TX)
-                setPadding(dp(12), dp(4), dp(12), dp(4))
-                setOnClickListener {
-                    val v = (defects[l.line_id] ?: 0) - 1
-                    defects[l.line_id] = maxOf(0, v)
-                    counters[l.line_id]?.text = defects[l.line_id].toString()
-                }
-            })
-            val counter = TextView(this).apply {
-                text = "0"
-                textSize = 16f; setTypeface(null, Typeface.BOLD)
-                gravity = Gravity.CENTER
-                setTextColor(TEXT)
-                minWidth = dp(30)
-            }
-            counters[l.line_id] = counter
-            row.addView(counter)
-            row.addView(TextView(this).apply {
-                text = "+"; textSize = 20f; setTextColor(RED_TX)
-                setPadding(dp(12), dp(4), dp(12), dp(4))
-                setOnClickListener {
-                    val cap = scanned(l).toInt()
-                    val v = (defects[l.line_id] ?: 0) + 1
-                    defects[l.line_id] = minOf(cap, v)
-                    counters[l.line_id]?.text = defects[l.line_id].toString()
-                }
-            })
-            container.addView(row)
-        }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Брак есть?")
-            .setView(ScrollView(this).apply { addView(container) })
-            .setPositiveButton("Завершить приёмку") { _, _ ->
-                doComplete(force, defects.filterValues { it > 0 })
-            }
-            .setNegativeButton("Назад", null)
-            .show()
-    }
+    // ─── Завершение (автоматическое; частичное — одной кнопкой) ─────────────
 
-    private fun doComplete(force: Boolean, defects: Map<Int, Int>) {
+    private fun autoComplete(force: Boolean = false) {
         if (completing) return
         completing = true
         render()
         lifecycleScope.launch {
             try {
-                val res = api.returnsComplete(
-                    receivingId,
-                    ReturnCompleteBody(
-                        force = force,
-                        defects = defects.map { (id, q) -> ReturnDefectLine(id, q.toString()) }
-                    )
-                )
+                // брак уже сохранён по-вещно (line-defect) — defects не шлём
+                val res = api.returnsComplete(receivingId, ReturnCompleteBody(force = force))
                 val msg = if (res.stock_restored == true) {
-                    "Принято. Годное: ${res.good_qty} → ДХ" +
-                        (if (n(res.defect_qty) > 0) ", брак: ${res.defect_qty} → зона брака" else "") +
-                        (res.document_number?.let { " ($it)" } ?: "")
+                    "Заказ принят. Годное: ${res.good_qty} → ДХ" +
+                        (if (n(res.defect_qty) > 0) ", брак: ${res.defect_qty} → зона брака" else "")
                 } else {
                     "Принято журнально — остатки не двигались (заказ отгружался до складского учёта)"
                 }
                 Toast.makeText(this@ReturnReceiveActivity, msg, Toast.LENGTH_LONG).show()
                 Beep.ok()
-                finish()
+                finish()   // назад к скану следующей коробки
             } catch (e: HttpException) {
                 completing = false
-                if (e.code() == 409) {
-                    // Бэкстоп: сервер увидел неполный скан — покажем диалог заново
-                    startComplete()
+                if (e.code() == 409 && !force) {
+                    // не всё отсканировано — спрашивает только частичный путь
+                    confirmPartial()
                 } else {
                     toast("Ошибка завершения: HTTP ${e.code()}")
                 }
@@ -454,6 +410,26 @@ class ReturnReceiveActivity : AppCompatActivity() {
                 render()
             }
         }
+    }
+
+    /** «В коробке больше ничего нет»: возврат — норма Kaspi, завершаем сразу;
+     *  отмена должна вернуться целиком — одно предупреждение. */
+    private fun confirmPartial() {
+        val r = rec ?: return
+        if (r.kind != "cancel_shipped") {
+            autoComplete(force = true)
+            return
+        }
+        val missing = r.lines.orEmpty().sumOf { expected(it) - scanned(it) }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("⚠ Не всё вернулось")
+            .setMessage(
+                "Отменённый заказ должен вернуться целиком, но ${fmtN(missing)} поз. нет " +
+                    "в коробке. Проверьте ещё раз! Завершить с нехваткой?"
+            )
+            .setPositiveButton("Завершить") { _, _ -> autoComplete(force = true) }
+            .setNegativeButton("Назад", null)
+            .show()
     }
 
     private fun confirmCancel() {
@@ -493,7 +469,7 @@ class ReturnReceiveActivity : AppCompatActivity() {
         tvChip.text = label
         tvChip.setTextColor(chipFg)
         tvChip.background = rounded(chipBg, 6)
-        tvCustomer.text = if (r.stock_restore) "Годное → ДХ, брак → зона брака"
+        tvSubtitle.text = if (r.stock_restore) "Скан товара → решение: брак или на склад"
             else "Журнальная приёмка — остатки не двигаются"
         val te = n(r.total_expected)
         val ts = n(r.total_scanned)
@@ -503,7 +479,6 @@ class ReturnReceiveActivity : AppCompatActivity() {
 
         llContent.removeAllViews()
 
-        // Журнальный баннер (заказ отгружался до складского учёта)
         if (!r.stock_restore) {
             val banner = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -528,44 +503,26 @@ class ReturnReceiveActivity : AppCompatActivity() {
         llContent.addView(tvMsg)
         llContent.addView(spacer(dp(10)))
 
-        val done = allDone()
-        if (!done) renderCurrent()
-
-        // Все приняты — зелёная панель
-        if (done) {
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                background = roundedBorder2(GREEN_BG, GREEN_BR, 16)
-                setPadding(dp(18), dp(18), dp(18), dp(18))
+        val pending = lineById(pendingLineId)
+        when {
+            completing -> {
+                val card = card(GREEN_BG, GREEN_BR)
+                card.addView(TextView(this).apply {
+                    text = "Завершаем приёмку…"
+                    textSize = 15f; setTypeface(null, Typeface.BOLD)
+                    gravity = Gravity.CENTER
+                    setTextColor(GREEN_TX)
+                    setPadding(0, dp(12), 0, dp(12))
+                })
+                llContent.addView(card)
+                llContent.addView(spacer(dp(12)))
             }
-            card.addView(TextView(this).apply {
-                text = "Все позиции отсканированы!"
-                textSize = 17f; setTypeface(null, Typeface.BOLD)
-                gravity = Gravity.CENTER
-                setTextColor(GREEN_TX)
-            })
-            card.addView(TextView(this).apply {
-                text = "${fmtN(ts)} из ${fmtN(te)}"
-                textSize = 13f; gravity = Gravity.CENTER
-                setTextColor(GREEN)
-                setPadding(0, dp(2), 0, dp(12))
-            })
-            card.addView(Button(this).apply {
-                text = if (completing) "Завершаем…" else "Завершить приёмку"
-                textSize = 15f; isAllCaps = false
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(WHITE)
-                isEnabled = !completing
-                backgroundTintList = android.content.res.ColorStateList.valueOf(GREEN)
-                setOnClickListener { startComplete() }
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(50)))
-            llContent.addView(card)
-            llContent.addView(spacer(dp(12)))
+            pending != null -> renderDecision(pending)
+            !allDone() -> renderCurrent()
         }
 
-        // Частичное завершение
-        if (!done && anyScanned()) {
-            val isReturn = r.kind != "cancel_shipped"
+        // «В коробке больше ничего нет» — частичный возврат (норма Kaspi)
+        if (!completing && pending == null && !allDone() && anyScanned()) {
             val strip = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -577,29 +534,29 @@ class ReturnReceiveActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             col.addView(TextView(this).apply {
-                text = if (isReturn) "В коробке была часть заказа?" else "В коробке не всё?"
+                text = "В коробке больше ничего нет?"
                 textSize = 12f; setTypeface(null, Typeface.BOLD)
                 setTextColor(ORANGE_TX)
             })
             col.addView(TextView(this).apply {
-                text = if (isReturn) "Для возвратов Kaspi это нормально"
-                    else "Отмена должна вернуться целиком"
+                text = if (rec?.kind != "cancel_shipped")
+                    "Для возвратов Kaspi часть заказа — это нормально"
+                else "Отмена должна вернуться целиком"
                 textSize = 11f; setTextColor(ORANGE)
             })
             strip.addView(col)
             strip.addView(Button(this).apply {
-                text = "Завершить"
+                text = "Готово"
                 textSize = 12f; isAllCaps = false
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(WHITE)
                 backgroundTintList = android.content.res.ColorStateList.valueOf(ORANGE)
-                setOnClickListener { startComplete() }
+                setOnClickListener { autoComplete() }
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)))
             llContent.addView(strip)
             llContent.addView(spacer(dp(12)))
         }
 
-        // Список позиций
         llContent.addView(TextView(this).apply {
             text = "СОСТАВ ВОЗВРАТА"
             textSize = 10f; letterSpacing = 0.08f
@@ -609,19 +566,68 @@ class ReturnReceiveActivity : AppCompatActivity() {
         })
         renderLines(r)
 
-        llBottom.visibility = if (r.status == "IN_PROGRESS") View.VISIBLE else View.GONE
+        llBottom.visibility =
+            if (r.status == "IN_PROGRESS" && !completing) View.VISIBLE else View.GONE
     }
 
-    /** «СЕЙЧАС ПРИНИМАЕМ» — синяя карточка как у сборщика. */
+    /** Решение по отсканированной вещи: КРАСНАЯ «БРАК» слева, ЗЕЛЁНАЯ
+     *  «ВЕРНУТЬ НА СКЛАД» справа — сразу понятно, куда жать. */
+    private fun renderDecision(line: ReturnLine) {
+        val card = card(WHITE, BLUE_L)
+        card.addView(TextView(this).apply {
+            text = "КУДА ЭТОТ ТОВАР?"
+            textSize = 10f; letterSpacing = 0.06f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(BLUE)
+        })
+        card.addView(TextView(this).apply {
+            text = line.name ?: line.offer_code ?: "—"
+            textSize = 15f; setTypeface(null, Typeface.BOLD)
+            setTextColor(TEXT)
+            setPadding(0, dp(3), 0, 0)
+        })
+        if (expected(line) > 1) {
+            card.addView(TextView(this).apply {
+                text = "Вещь ${fmtN(scanned(line))} из ${fmtN(expected(line))}"
+                textSize = 12f; setTextColor(MUTED)
+                setPadding(0, dp(2), 0, 0)
+            })
+        }
+        addImagesRow(card, line.images.orEmpty().take(3), 110)
+
+        val btns = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(12), 0, 0)
+        }
+        // Кнопки всегда активны: от двойного нажатия защищает guard в decide()
+        // (render зовётся при busy=true — задизейбленная кнопка тут зависла бы)
+        btns.addView(Button(this).apply {
+            text = "БРАК"
+            textSize = 16f; isAllCaps = true
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(WHITE)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(RED)
+            setOnClickListener { decide(defect = true) }
+        }, LinearLayout.LayoutParams(0, dp(64), 1f).apply { rightMargin = dp(5) })
+        btns.addView(Button(this).apply {
+            text = "ВЕРНУТЬ\nНА СКЛАД"
+            textSize = 14f; isAllCaps = true
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(WHITE)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(GREEN)
+            setOnClickListener { decide(defect = false) }
+        }, LinearLayout.LayoutParams(0, dp(64), 1f).apply { leftMargin = dp(5) })
+        card.addView(btns)
+        llContent.addView(card)
+        llContent.addView(spacer(dp(12)))
+    }
+
+    /** «СЕЙЧАС ПРИНИМАЕМ» — что сканировать следующим. */
     private fun renderCurrent() {
         val cur = nextPending() ?: return
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = roundedBorder2(WHITE, BLUE_L, 16)
-            setPadding(dp(14), dp(11), dp(14), dp(13))
-        }
+        val card = card(WHITE, BLUE_L)
         card.addView(TextView(this).apply {
-            text = "СЕЙЧАС ПРИНИМАЕМ"
+            text = "СЕЙЧАС ПРИНИМАЕМ — ОТСКАНИРУЙТЕ ТОВАР"
             textSize = 10f; letterSpacing = 0.06f
             setTypeface(null, Typeface.BOLD)
             setTextColor(BLUE)
@@ -658,8 +664,10 @@ class ReturnReceiveActivity : AppCompatActivity() {
         r.lines.orEmpty().forEach { l ->
             val sc = scanned(l)
             val exp = expected(l)
+            val df = n(l.qty_defect)
             val lineDone = sc >= exp
-            val isCurrent = next != null && l.line_id == next.line_id
+            val isCurrent = !completing && pendingLineId == null &&
+                next != null && l.line_id == next.line_id
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -695,13 +703,16 @@ class ReturnReceiveActivity : AppCompatActivity() {
             })
             col.addView(TextView(this).apply {
                 text = (l.main_sku ?: l.offer_code ?: "") +
-                    (if (exp > 1) " · ${fmtN(sc)}/${fmtN(exp)} шт" else "")
-                textSize = 11f; setTextColor(FAINT)
+                    (if (exp > 1) " · ${fmtN(sc)}/${fmtN(exp)} шт" else "") +
+                    (if (df > 0) " · брак ${fmtN(df)}" else "")
+                textSize = 11f
+                setTextColor(if (df > 0) RED else FAINT)
                 setPadding(0, dp(1), 0, 0)
             })
             row.addView(col)
             row.addView(TextView(this).apply {
                 text = when {
+                    lineDone && df > 0 -> "Брак ${fmtN(df)}"
                     lineDone -> "Принято"
                     sc > 0 -> "${fmtN(sc)}/${fmtN(exp)}"
                     isCurrent -> "← текущий"
@@ -709,6 +720,7 @@ class ReturnReceiveActivity : AppCompatActivity() {
                 }
                 textSize = 11f; setTypeface(null, Typeface.BOLD)
                 setTextColor(when {
+                    lineDone && df > 0 -> RED
                     lineDone -> Color.parseColor("#16A34A")
                     sc > 0 || isCurrent -> BLUE
                     else -> Color.parseColor("#D1D5DB")
@@ -738,6 +750,12 @@ class ReturnReceiveActivity : AppCompatActivity() {
     }
 
     // ─── Small helpers ───────────────────────────────────────────────────────
+
+    private fun card(bg: Int, stroke: Int) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = roundedBorder2(bg, stroke, 16)
+        setPadding(dp(14), dp(11), dp(14), dp(13))
+    }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 

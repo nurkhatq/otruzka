@@ -137,6 +137,11 @@ interface CoreApi {
         @Path("id") id: Int, @Body body: ReturnItemScanBody
     ): ReturnItemScanResponse
 
+    @POST("tsd/returns/{id}/line-defect")
+    suspend fun returnsLineDefect(
+        @Path("id") id: Int, @Body body: ReturnDefectLine
+    ): ReturnLineDefectResponse
+
     @POST("tsd/returns/{id}/complete")
     suspend fun returnsComplete(
         @Path("id") id: Int, @Body body: ReturnCompleteBody

@@ -315,6 +315,8 @@ data class ReturnCompleteBody(
     val defects: List<ReturnDefectLine> = emptyList()
 )
 
+data class ReturnLineDefectResponse(val receiving: ReturnReceiving?)
+
 data class ReturnCompleteResponse(
     val status: String?,
     val stock_restored: Boolean?,
