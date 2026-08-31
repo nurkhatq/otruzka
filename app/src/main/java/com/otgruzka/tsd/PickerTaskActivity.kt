@@ -399,7 +399,7 @@ class PickerTaskActivity : AppCompatActivity() {
                 val cancelled = r.cancelled_orders ?: 0
                 var msg = "Готово."
                 if (cancelled > 0) msg += " В отмену: $cancelled."
-                if (!r.pdf_filenames.isNullOrEmpty()) msg += " Печать отправлена."
+                if (r.pdf_queued || !r.pdf_filenames.isNullOrEmpty()) msg += " Печать отправлена."
                 toast(msg)
                 finish()
             } catch (e: Exception) {

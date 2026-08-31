@@ -112,6 +112,7 @@ data class PickerCompleteResponse(
     val scanned: Int?,
     val no_barcode: Int?,
     val cancelled_orders: Int?,
+    val pdf_queued: Boolean = false,
     val pdf_filenames: List<String>?
 )
 
