@@ -1,12 +1,17 @@
 package com.otgruzka.tsd
 
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -17,38 +22,67 @@ import com.otgruzka.tsd.api.CoreApiClient
 import com.otgruzka.tsd.api.PickerSessionMe
 import com.otgruzka.tsd.api.PickerTask
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
-/** Смена сборщика: начать/завершить + список назначенных заданий (round-robin с сервера). */
+/**
+ * Сборщик — дизайн скопирован с waybills (/picker): вкладки «Задания / История»,
+ * карточки заданий с прогрессом, сессия start/end, история с повторной печатью.
+ */
 class PickerTasksActivity : AppCompatActivity() {
 
     companion object {
-        val CAT_LABELS = mapOf(
-            "mass_single" to "Массовые",
-            "single" to "Одиночные",
-            "multi_qty" to "Мультикол-во",
-            "kit" to "Наборы",
-            "multi" to "Мультипозиция",
-            "CANCEL" to "Отмена",
-        )
+        // Категории ядра → буква и цвета чипа как в waybills (A фиолетовый,
+        // B синий, C оранжевый)
+        fun catChip(type: String?): Triple<String, Int, Int> = when (type) {
+            "mass_single" -> Triple("A", Color.parseColor("#F3E8FF"), Color.parseColor("#7E22CE"))
+            "kit", "multi" -> Triple("C", Color.parseColor("#FFEDD5"), Color.parseColor("#C2410C"))
+            "CANCEL" -> Triple("ОТМ", Color.parseColor("#FEE2E2"), Color.parseColor("#B91C1C"))
+            else -> Triple("B", Color.parseColor("#DBEAFE"), Color.parseColor("#1D4ED8"))
+        }
 
-        fun catLabel(type: String?): String = CAT_LABELS[type] ?: (type ?: "—")
+        fun catLabel(type: String?): String = when (type) {
+            "mass_single" -> "Массовые"
+            "single" -> "Одиночные"
+            "multi_qty" -> "Мультикол-во"
+            "kit" -> "Наборы"
+            "multi" -> "Мультипозиция"
+            "CANCEL" -> "Отмена"
+            else -> type ?: "—"
+        }
+
+        // Палитра waybills (Tailwind)
+        val BG = Color.parseColor("#F9FAFB")
+        val WHITE = Color.WHITE
+        val BORDER = Color.parseColor("#E5E7EB")
+        val TEXT = Color.parseColor("#111827")
+        val MUTED = Color.parseColor("#6B7280")
+        val FAINT = Color.parseColor("#9CA3AF")
+        val BLUE = Color.parseColor("#2563EB")
+        val GREEN = Color.parseColor("#22C55E")
+        val YELLOW = Color.parseColor("#EAB308")
+        val RED = Color.parseColor("#DC2626")
     }
 
     private lateinit var api: CoreApi
     private lateinit var tvUser: TextView
     private lateinit var tvStoreCity: TextView
-    private lateinit var tvSessionState: TextView
-    private lateinit var btnSession: Button
-    private lateinit var llTasks: LinearLayout
-    private lateinit var tvTasksTitle: TextView
+    private lateinit var tabTasks: TextView
+    private lateinit var tabHistory: TextView
+    private lateinit var llBody: LinearLayout
 
     private var me: PickerSessionMe? = null
+    private var history: List<PickerTask> = emptyList()
+    private var tab = "tasks"
+    private var historySearch = ""
+    private var reprintingId: Int? = null
     private var loading = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!CoreAuth.isLoggedIn(this)) {
-            startActivity(Intent(this, PickerLoginActivity::class.java)); finish(); return
+            startActivity(Intent(this, LoginActivity::class.java)); finish(); return
         }
         api = CoreApiClient.build(this)
         setContentView(buildUi())
@@ -60,101 +94,91 @@ class PickerTasksActivity : AppCompatActivity() {
         if (CoreAuth.isLoggedIn(this)) load()
     }
 
-    // ─── UI ──────────────────────────────────────────────────────────────────
+    // ─── Skeleton ────────────────────────────────────────────────────────────
 
     private fun buildUi(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(getColor(R.color.background))
+            setBackgroundColor(BG)
             fitsSystemWindows = true
         }
 
-        // Top bar
+        // Header (белый, sticky)
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(getColor(R.color.surface))
-            elevation = dp(3).toFloat()
-            setPadding(dp(20), dp(14), dp(12), dp(14))
+            setBackgroundColor(WHITE)
+            elevation = dp(2).toFloat()
+            setPadding(dp(8), dp(12), dp(16), dp(12))
         }
-        val userCol = LinearLayout(this).apply {
+        top.addView(TextView(this).apply {
+            text = "←"; textSize = 22f
+            setTextColor(BLUE)
+            setPadding(dp(12), dp(2), dp(12), dp(2))
+            setOnClickListener { finish() }
+        })
+        val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         tvUser = TextView(this).apply {
-            textSize = 15f; setTypeface(null, Typeface.BOLD)
-            setTextColor(getColor(R.color.on_background))
+            text = "Сборщик"
+            textSize = 17f; setTypeface(null, Typeface.BOLD)
+            setTextColor(TEXT)
         }
         tvStoreCity = TextView(this).apply {
-            textSize = 11f; setTextColor(getColor(R.color.primary))
-            setPadding(0, dp(2), 0, 0)
+            textSize = 11f; setTextColor(BLUE)
+            setPadding(0, dp(1), 0, 0)
             setOnClickListener { changeStoreOrCity() }
         }
-        userCol.addView(tvUser); userCol.addView(tvStoreCity)
-        top.addView(userCol)
-        top.addView(headerLink("История", R.color.primary) {
-            val i = Intent(this, PickerHistoryActivity::class.java)
-            me?.session?.id?.let { sid -> i.putExtra("session_id", sid) }
-            startActivity(i)
-        })
-        top.addView(headerLink("Выйти", R.color.error) { doLogout() })
+        col.addView(tvUser); col.addView(tvStoreCity)
+        top.addView(col)
         root.addView(top)
 
+        // Tabs
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(WHITE)
+            setPadding(dp(16), 0, dp(16), dp(10))
+        }
+        tabTasks = tabButton("Задания") { switchTab("tasks") }
+        tabHistory = tabButton("История") { switchTab("history") }
+        tabs.addView(tabTasks, LinearLayout.LayoutParams(0, dp(38), 1f).apply { rightMargin = dp(8) })
+        tabs.addView(tabHistory, LinearLayout.LayoutParams(0, dp(38), 1f))
+        root.addView(tabs)
+
         val scroll = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0
-            ).apply { weight = 1f }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0)
+                .apply { weight = 1f }
             isFillViewport = true
         }
-        val body = LinearLayout(this).apply {
+        llBody = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(20))
+            setPadding(dp(16), dp(12), dp(16), dp(24))
         }
-
-        // Session card
-        val sessionCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = cardDrawable(getColor(R.color.surface))
-            elevation = dp(2).toFloat()
-            setPadding(dp(18), dp(14), dp(18), dp(16))
-        }
-        tvSessionState = TextView(this).apply {
-            textSize = 13f; setTextColor(getColor(R.color.secondary))
-        }
-        btnSession = Button(this).apply {
-            textSize = 15f; isAllCaps = false
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(getColor(R.color.on_primary))
-            setOnClickListener { toggleSession() }
-        }
-        sessionCard.addView(tvSessionState)
-        sessionCard.addView(btnSession, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(50)
-        ).apply { topMargin = dp(10) })
-        body.addView(sessionCard)
-
-        tvTasksTitle = TextView(this).apply {
-            text = "МОИ ЗАДАНИЯ"
-            textSize = 11f; letterSpacing = 0.08f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(getColor(R.color.secondary))
-            setPadding(dp(4), dp(18), 0, dp(8))
-        }
-        body.addView(tvTasksTitle)
-
-        llTasks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        body.addView(llTasks)
-
-        scroll.addView(body)
+        scroll.addView(llBody)
         root.addView(scroll)
         return root
     }
 
+    private fun tabButton(label: String, onClick: () -> Unit) = TextView(this).apply {
+        text = label
+        textSize = 14f; setTypeface(null, Typeface.BOLD)
+        gravity = Gravity.CENTER
+        setOnClickListener { onClick() }
+    }
+
     private fun renderHeader() {
-        tvUser.text = CoreAuth.fullName(this) ?: CoreAuth.username(this) ?: ""
+        val name = CoreAuth.fullName(this) ?: CoreAuth.username(this) ?: ""
+        tvUser.text = "Сборщик · $name"
         val store = CoreAuth.storeName(this) ?: "магазин?"
-        val city = CoreAuth.cityLabel(CoreAuth.city(this))
-        tvStoreCity.text = "$store · $city ▾"
+        tvStoreCity.text = "$store · ${CoreAuth.cityLabel(CoreAuth.city(this))} ▾"
+    }
+
+    private fun switchTab(t: String) {
+        tab = t
+        if (t == "history") loadHistory()
+        render()
     }
 
     // ─── Data ────────────────────────────────────────────────────────────────
@@ -164,68 +188,116 @@ class PickerTasksActivity : AppCompatActivity() {
         val storeId = CoreAuth.storeId(this)
         val city = CoreAuth.city(this)
         if (storeId == 0 || city.isNullOrBlank()) {
-            tvSessionState.text = "Выберите магазин и город (нажмите сверху)"
-            btnSession.visibility = View.GONE
+            llBody.removeAllViews()
+            llBody.addView(emptyNote("Выберите магазин и город — нажмите строку под заголовком"))
             return
         }
         loading = true
-        tvSessionState.text = "Загрузка…"
         lifecycleScope.launch {
             try {
                 me = api.sessionMe(storeId, city)
-                renderSession()
-                renderTasks()
+                if (tab == "history") loadHistory() else render()
             } catch (e: Exception) {
-                tvSessionState.text = "Нет связи: ${e.message?.take(50)}"
+                llBody.removeAllViews()
+                llBody.addView(emptyNote("Нет связи: ${e.message?.take(50)}"))
             } finally {
                 loading = false
             }
         }
     }
 
-    private fun renderSession() {
-        val m = me ?: return
-        btnSession.visibility = View.VISIBLE
-        if (m.in_session) {
-            val cnt = m.active_sessions_count ?: 1
-            tvSessionState.text = "Смена активна · сборщиков на смене: $cnt"
-            btnSession.text = "Завершить смену"
-            btnSession.backgroundTintList =
-                android.content.res.ColorStateList.valueOf(getColor(R.color.error))
-        } else {
-            tvSessionState.text = "Смена не начата — задания раздаются только на смене"
-            btnSession.text = "Начать смену"
-            btnSession.backgroundTintList =
-                android.content.res.ColorStateList.valueOf(getColor(R.color.primary))
+    private fun loadHistory() {
+        lifecycleScope.launch {
+            try {
+                val resp = api.history(limit = 100, sessionId = me?.session?.id)
+                history = resp.tasks ?: emptyList()
+                render()
+            } catch (_: Exception) {}
         }
+    }
+
+    // ─── Render ──────────────────────────────────────────────────────────────
+
+    private fun render() {
+        styleTab(tabTasks, tab == "tasks",
+            "Задания" + (me?.tasks?.size?.takeIf { it > 0 }?.let { " ($it)" } ?: ""))
+        styleTab(tabHistory, tab == "history",
+            "История" + (history.size.takeIf { it > 0 }?.let { " ($it)" } ?: ""))
+        llBody.removeAllViews()
+        if (tab == "tasks") renderTasks() else renderHistory()
+    }
+
+    private fun styleTab(btn: TextView, active: Boolean, label: String) {
+        btn.text = label
+        btn.setTextColor(if (active) WHITE else MUTED)
+        btn.background = rounded(if (active) BLUE else Color.parseColor("#F3F4F6"), 10)
     }
 
     private fun renderTasks() {
-        val m = me ?: return
-        llTasks.removeAllViews()
-        val tasks = m.tasks ?: emptyList()
-        tvTasksTitle.text = "МОИ ЗАДАНИЯ (${tasks.size})"
+        val m = me
+        if (m == null) { llBody.addView(emptyNote("Загрузка…")); return }
+
         if (!m.in_session) {
-            llTasks.addView(emptyNote("Начните смену, чтобы получить задания"))
+            // Не в сессии — большая синяя кнопка, как в waybills
+            val card = card()
+            card.addView(TextView(this).apply {
+                text = "Сессия не начата"
+                textSize = 15f; setTypeface(null, Typeface.BOLD)
+                gravity = Gravity.CENTER
+                setTextColor(TEXT)
+            })
+            card.addView(TextView(this).apply {
+                text = "Начните сессию — задания раздаются автоматически"
+                textSize = 12f; gravity = Gravity.CENTER
+                setTextColor(MUTED)
+                setPadding(0, dp(4), 0, dp(12))
+            })
+            card.addView(bigButton("Начать сессию", BLUE) { startSession() })
+            llBody.addView(card)
             return
         }
+
+        val cnt = m.active_sessions_count ?: 1
+        llBody.addView(TextView(this).apply {
+            text = "Сборщиков на смене: $cnt"
+            textSize = 12f; setTextColor(MUTED)
+            setPadding(dp(4), 0, 0, dp(10))
+        })
+
+        val tasks = m.tasks ?: emptyList()
         if (tasks.isEmpty()) {
-            llTasks.addView(emptyNote("Заданий пока нет. Обновится само при открытии экрана."))
-            return
+            val empty = card(dashed = true)
+            empty.addView(TextView(this).apply {
+                text = "Заданий пока нет"
+                textSize = 13f; gravity = Gravity.CENTER
+                setTextColor(FAINT)
+                setPadding(0, dp(20), 0, dp(20))
+            })
+            llBody.addView(empty)
         }
         tasks.forEach { t ->
-            llTasks.addView(taskRow(t))
-            llTasks.addView(spacer(dp(8)))
+            llBody.addView(taskCard(t))
+            llBody.addView(spacer(dp(8)))
         }
+
+        llBody.addView(spacer(dp(12)))
+        llBody.addView(bigButton("Завершить сессию", RED) { endSession() })
     }
 
-    private fun taskRow(t: PickerTask): View {
+    /** Карточка задания как TaskCard в waybills: чип, имя, N заказов, прогресс. */
+    private fun taskCard(t: PickerTask): View {
+        val isDone = t.scanned_qty >= t.total_orders
+        val inProgress = t.scanned_qty > 0 && !isDone
+        val (letter, chipBg, chipFg) = catChip(t.task_type)
+
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = cardDrawable(getColor(R.color.surface))
-            elevation = dp(2).toFloat()
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = roundedBorder(WHITE,
+                if (isDone) Color.parseColor("#BBF7D0")
+                else if (inProgress) Color.parseColor("#FDE047") else BORDER, 16)
+            alpha = if (isDone) 0.7f else 1f
+            setPadding(dp(14), dp(13), dp(14), dp(13))
             setOnClickListener {
                 startActivity(
                     Intent(this@PickerTasksActivity, PickerTaskActivity::class.java)
@@ -233,13 +305,119 @@ class PickerTasksActivity : AppCompatActivity() {
                 )
             }
         }
-        val inProgress = t.scanned_qty > 0
         row.addView(TextView(this).apply {
-            text = catLabel(t.task_type)
-            textSize = 10f; setTypeface(null, Typeface.BOLD)
-            setTextColor(getColor(if (t.task_type == "kit") R.color.warning else R.color.primary))
-            background = cardDrawable(0x145956E8)
-            setPadding(dp(8), dp(4), dp(8), dp(4))
+            text = letter
+            textSize = 12f; setTypeface(null, Typeface.BOLD)
+            setTextColor(chipFg)
+            background = rounded(chipBg, 8)
+            setPadding(dp(9), dp(4), dp(9), dp(4))
+        })
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { leftMargin = dp(10); rightMargin = dp(8) }
+        }
+        col.addView(TextView(this).apply {
+            text = "#${t.id} · ${catLabel(t.task_type)}"
+            textSize = 10f; setTextColor(FAINT)
+        })
+        col.addView(TextView(this).apply {
+            text = t.product_name ?: "—"
+            textSize = 14f; maxLines = 2
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(TEXT)
+        })
+        col.addView(TextView(this).apply {
+            val n = t.total_orders
+            text = "$n заказ" + if (n == 1) "" else if (n < 5) "а" else "ов"
+            textSize = 11f; setTextColor(MUTED)
+        })
+        if (inProgress || isDone) {
+            val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                max = t.total_orders.coerceAtLeast(1)
+                progress = t.scanned_qty
+                progressTintList = android.content.res.ColorStateList.valueOf(
+                    if (isDone) GREEN else YELLOW
+                )
+            }
+            col.addView(bar, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(5)
+            ).apply { topMargin = dp(6) })
+        }
+        row.addView(col)
+        row.addView(TextView(this).apply {
+            text = "${t.scanned_qty}/${t.total_orders}"
+            textSize = 17f; setTypeface(null, Typeface.BOLD)
+            setTextColor(BLUE)
+        })
+        return row
+    }
+
+    private fun renderHistory() {
+        // Поиск как в waybills
+        val et = EditText(this).apply {
+            hint = "Поиск по названию или номеру заказа…"
+            setText(historySearch)
+            textSize = 13f
+            setTextColor(TEXT); setHintTextColor(FAINT)
+            background = roundedBorder(WHITE, BORDER, 12)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(s: Editable?) {
+                    historySearch = s?.toString() ?: ""
+                    renderHistoryList()
+                }
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            })
+        }
+        llBody.addView(et)
+        llBody.addView(spacer(dp(10)))
+        llHistoryList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        llBody.addView(llHistoryList)
+        renderHistoryList()
+    }
+
+    private var llHistoryList: LinearLayout? = null
+
+    private fun renderHistoryList() {
+        val list = llHistoryList ?: return
+        list.removeAllViews()
+        val q = historySearch.trim().lowercase()
+        val filtered = if (q.isEmpty()) history else history.filter { t ->
+            (t.product_name ?: "").lowercase().contains(q) ||
+                t.orders.orEmpty().any { it.order_code.contains(q, ignoreCase = true) }
+        }
+        if (filtered.isEmpty()) {
+            val empty = card(dashed = true)
+            empty.addView(TextView(this).apply {
+                text = if (q.isNotEmpty()) "Ничего не найдено" else "Завершённых заданий пока нет"
+                textSize = 13f; gravity = Gravity.CENTER
+                setTextColor(FAINT)
+                setPadding(0, dp(20), 0, dp(20))
+            })
+            list.addView(empty)
+            return
+        }
+        filtered.forEach { t ->
+            list.addView(historyRow(t))
+            list.addView(spacer(dp(8)))
+        }
+    }
+
+    private fun historyRow(t: PickerTask): View {
+        val (letter, chipBg, chipFg) = catChip(t.task_type)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = roundedBorder(WHITE, BORDER, 16)
+            setPadding(dp(14), dp(11), dp(14), dp(11))
+        }
+        row.addView(TextView(this).apply {
+            text = letter
+            textSize = 11f; setTypeface(null, Typeface.BOLD)
+            setTextColor(chipFg)
+            background = rounded(chipBg, 6)
+            setPadding(dp(7), dp(2), dp(7), dp(2))
         })
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -248,58 +426,84 @@ class PickerTasksActivity : AppCompatActivity() {
         }
         col.addView(TextView(this).apply {
             text = t.product_name ?: "—"
-            textSize = 14f; maxLines = 2
+            textSize = 13f; maxLines = 2
             setTypeface(null, Typeface.BOLD)
-            setTextColor(getColor(R.color.on_background))
+            setTextColor(TEXT)
+        })
+        val codes = t.orders.orEmpty().map { it.order_code }.distinct()
+        col.addView(TextView(this).apply {
+            text = codes.take(2).joinToString(", ") +
+                if (codes.size > 2) " +${codes.size - 2}" else ""
+            textSize = 11f; setTextColor(MUTED)
+            setPadding(0, dp(2), 0, 0)
         })
         col.addView(TextView(this).apply {
-            text = "#${t.id}" + if (inProgress) " · в работе" else ""
-            textSize = 11f
-            setTextColor(getColor(if (inProgress) R.color.warning else R.color.secondary))
+            text = "#${t.id} · ${t.total_orders} поз." +
+                (fmtTime(t.completed_at)?.let { " · $it" } ?: "")
+            textSize = 11f; setTextColor(FAINT)
             setPadding(0, dp(2), 0, 0)
         })
         row.addView(col)
-        row.addView(TextView(this).apply {
-            text = "${t.scanned_qty}/${t.total_orders}"
-            textSize = 17f; setTypeface(null, Typeface.BOLD)
-            setTextColor(getColor(if (t.scanned_qty >= t.total_orders) R.color.success else R.color.primary))
-        })
+        if (t.pdf_filename != null) {
+            row.addView(Button(this).apply {
+                text = if (reprintingId == t.id) "…" else "Печать"
+                textSize = 12f; isAllCaps = false
+                isEnabled = reprintingId != t.id
+                setTextColor(Color.parseColor("#374151"))
+                backgroundTintList =
+                    android.content.res.ColorStateList.valueOf(Color.parseColor("#F3F4F6"))
+                setOnClickListener { reprint(t.id) }
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)
+            ).apply { leftMargin = dp(8); gravity = Gravity.CENTER_VERTICAL })
+        }
         return row
     }
 
     // ─── Actions ─────────────────────────────────────────────────────────────
 
-    private fun toggleSession() {
-        val m = me
-        if (m?.in_session == true) {
-            android.app.AlertDialog.Builder(this)
-                .setTitle("Завершить смену")
-                .setMessage("Незапущенные задания вернутся в очередь и уйдут другим сборщикам.")
-                .setPositiveButton("Завершить") { _, _ ->
-                    lifecycleScope.launch {
-                        try {
-                            api.endSession()
-                            toast("Смена завершена")
-                            load()
-                        } catch (e: Exception) { toast("Ошибка: ${e.message?.take(50)}") }
-                    }
+    private fun startSession() {
+        val storeId = CoreAuth.storeId(this)
+        val city = CoreAuth.city(this) ?: return
+        lifecycleScope.launch {
+            try {
+                val r = api.startSession(storeId, city)
+                toast("Сессия начата · заданий: ${r.assigned ?: 0}")
+                load()
+            } catch (e: Exception) { toast("Ошибка: ${e.message?.take(50)}") }
+        }
+    }
+
+    private fun endSession() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Завершить сессию?")
+            .setMessage("Незапущенные задания вернутся в очередь.")
+            .setPositiveButton("Завершить") { _, _ ->
+                lifecycleScope.launch {
+                    try {
+                        api.endSession()
+                        toast("Сессия завершена")
+                        load()
+                    } catch (e: Exception) { toast("Ошибка: ${e.message?.take(50)}") }
                 }
-                .setNegativeButton("Отмена", null)
-                .show()
-        } else {
-            val storeId = CoreAuth.storeId(this)
-            val city = CoreAuth.city(this) ?: return
-            btnSession.isEnabled = false
-            lifecycleScope.launch {
-                try {
-                    val r = api.startSession(storeId, city)
-                    toast("Смена начата · назначено заданий: ${r.assigned ?: 0}")
-                    load()
-                } catch (e: Exception) {
-                    toast("Ошибка: ${e.message?.take(50)}")
-                } finally {
-                    btnSession.isEnabled = true
-                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun reprint(taskId: Int) {
+        if (reprintingId != null) return
+        reprintingId = taskId
+        renderHistoryList()
+        lifecycleScope.launch {
+            try {
+                api.reprint(taskId)
+                toast("Накладная отправлена на принт-станцию")
+            } catch (e: Exception) {
+                toast("Ошибка печати: ${e.message?.take(60)}")
+            } finally {
+                reprintingId = null
+                renderHistoryList()
             }
         }
     }
@@ -338,40 +542,64 @@ class PickerTasksActivity : AppCompatActivity() {
         }
     }
 
-    private fun doLogout() {
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Выход из сборки")
-            .setMessage("Выйти из аккаунта сборщика? Активная смена останется открытой.")
-            .setPositiveButton("Выйти") { _, _ ->
-                CoreAuth.logout(this); CoreApiClient.reset()
-                finish()
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
-
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
-    private fun headerLink(text: String, colorRes: Int, onClick: () -> Unit) =
-        TextView(this).apply {
-            this.text = text; textSize = 13f
-            setTextColor(getColor(colorRes))
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            setOnClickListener { onClick() }
-        }
+    private fun fmtTime(iso: String?): String? {
+        if (iso.isNullOrBlank()) return null
+        return try {
+            val clean = iso.substringBefore(".").replace("Z", "").replace("T", " ")
+            val inFmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+            val outFmt = SimpleDateFormat("HH:mm", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("Asia/Almaty")
+            }
+            outFmt.format(inFmt.parse(clean)!!)
+        } catch (_: Exception) { null }
+    }
+
+    private fun card(dashed: Boolean = false): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = if (dashed) dashedBorder() else roundedBorder(WHITE, BORDER, 16)
+        setPadding(dp(16), dp(16), dp(16), dp(16))
+    }
+
+    private fun bigButton(label: String, color: Int, onClick: () -> Unit) = Button(this).apply {
+        text = label
+        textSize = 15f; isAllCaps = false
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(WHITE)
+        backgroundTintList = android.content.res.ColorStateList.valueOf(color)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(50)
+        )
+        setOnClickListener { onClick() }
+    }
 
     private fun emptyNote(text: String) = TextView(this).apply {
         this.text = text
         textSize = 13f; gravity = Gravity.CENTER
-        setTextColor(getColor(R.color.secondary))
+        setTextColor(MUTED)
         setPadding(dp(10), dp(30), dp(10), dp(30))
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    private fun cardDrawable(bg: Int) =
+    private fun rounded(bg: Int, r: Int) =
         android.graphics.drawable.GradientDrawable().apply {
-            setColor(bg); cornerRadius = dp(12).toFloat()
+            setColor(bg); cornerRadius = dp(r).toFloat()
+        }
+
+    private fun roundedBorder(bg: Int, stroke: Int, r: Int) =
+        android.graphics.drawable.GradientDrawable().apply {
+            setColor(bg); cornerRadius = dp(r).toFloat()
+            setStroke(dp(1), stroke)
+        }
+
+    private fun dashedBorder() =
+        android.graphics.drawable.GradientDrawable().apply {
+            setColor(WHITE); cornerRadius = dp(16).toFloat()
+            setStroke(dp(2), BORDER, dp(6).toFloat(), dp(5).toFloat())
         }
 
     private fun spacer(h: Int) = View(this).apply {

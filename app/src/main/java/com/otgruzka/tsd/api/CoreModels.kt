@@ -127,3 +127,108 @@ data class PickerReprintResponse(
 data class CoreCell(
     val code: String?
 )
+
+// ─── ТСД-отгрузка (/tsd) — форма совместима со старым wms-backend ────────────
+
+data class TsdShift(
+    val id: Long,
+    val batch_id: String,
+    val status: String,
+    val order_count: Int,
+    val scan_count: Int = 0,
+    val shipped_count: Int = 0,
+    val started_at: String?,
+    val completed_at: String? = null,
+    val city: String? = null,
+    val user_name: String? = null
+)
+
+data class TsdShiftsResponse(
+    val total: Int,
+    val items: List<TsdShift>
+)
+
+data class TsdShiftDate(
+    val date: String,
+    val session_count: Int,
+    val total_orders: Int,
+    val shipped_count: Int = 0
+)
+
+data class TsdShiftStats(
+    val batch_id: String,
+    val status: String,
+    val city: String?,
+    val user_name: String?,
+    val started_at: String?,
+    val completed_at: String?,
+    val duration_sec: Int?,
+    val total_scanned: Int,
+    val by_result: Map<String, Int>,
+    val by_demand: Map<String, Int>
+)
+
+data class TsdScanItem(
+    val order_code: String,
+    val customer_name: String?,
+    val total_price: Double,
+    val scan_result: String,
+    val demand_status: String?,
+    val demand_name: String?,
+    val lock_holder: String?,
+    val scanned_at: String
+)
+
+data class TsdScansResponse(
+    val total: Int,
+    val items: List<TsdScanItem>
+)
+
+data class TsdScanBody(val code: String)
+
+data class TsdOrderInfo(
+    val order_code: String?,
+    val customer_name: String?,
+    val total_price: Double,
+    val assembled: Boolean,
+    val express: Boolean,
+    val is_cancelling: Boolean,
+    val source: String?
+)
+
+data class TsdScanResponse(
+    val result: String,   // SUCCESS | ALREADY_SHIPPED | ALREADY_LOCKED | CANCELLING | NOT_FOUND
+    val order_code: String?,
+    val lock_acquired: Boolean,
+    val order: TsdOrderInfo?,
+    val lock_holder: String?,
+    val duplicate: Boolean = false
+)
+
+data class TsdShipBody(val codes: List<String>)
+
+data class TsdShipResult(
+    val code: String,
+    val status: String    // SHIPPED | SKIPPED
+)
+
+data class TsdShipResponse(
+    val shipped: Int,
+    val results: List<TsdShipResult>
+)
+
+data class TsdPickupOrder(
+    val order_code: String,
+    val customer_name: String?,
+    val total_price: Double,
+    val assembled: Boolean,
+    val express: Boolean,
+    val is_cancelling: Boolean
+)
+
+data class TsdUser(
+    val id: Int,
+    val username: String,
+    val full_name: String,
+    val city: String?
+)

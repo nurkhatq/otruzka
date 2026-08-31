@@ -71,4 +71,59 @@ interface CoreApi {
     /** Ячейки, где лежит товар: sku → [{code}]. */
     @GET("cells/for-skus")
     suspend fun cellsForSkus(@Query("skus") skus: String): Map<String, List<CoreCell>>
+
+    // ─── ТСД-отгрузка (/tsd) ─────────────────────────────────────────────────
+
+    @POST("tsd/shifts")
+    suspend fun createShift(): TsdShift
+
+    @GET("tsd/shifts/active")
+    suspend fun getActiveShift(): TsdShift?
+
+    @PATCH("tsd/shifts/{id}")
+    suspend fun updateShift(
+        @Path("id") shiftId: String,
+        @Query("status") status: String
+    ): TsdShift
+
+    @GET("tsd/shifts")
+    suspend fun getShifts(
+        @Query("page") page: Int = 0,
+        @Query("page_size") pageSize: Int = 20,
+        @Query("city") city: String? = null,
+        @Query("username") username: String? = null,
+        @Query("search") search: String? = null,
+        @Query("date_from") dateFrom: String? = null,
+        @Query("date_to") dateTo: String? = null,
+    ): TsdShiftsResponse
+
+    @GET("tsd/shifts/dates")
+    suspend fun getShiftDates(@Query("city") city: String? = null): List<TsdShiftDate>
+
+    @GET("tsd/shifts/{id}/stats")
+    suspend fun getShiftStats(@Path("id") shiftId: String): TsdShiftStats
+
+    @GET("tsd/shifts/{id}/scans")
+    suspend fun getShiftScans(
+        @Path("id") shiftId: String,
+        @Query("page") page: Int = 0,
+        @Query("page_size") pageSize: Int = 50,
+        @Query("scan_result") scanResult: String? = null,
+        @Query("search") search: String? = null,
+    ): TsdScansResponse
+
+    @POST("tsd/scan")
+    suspend fun tsdScan(@Body body: TsdScanBody): TsdScanResponse
+
+    @DELETE("tsd/scan/{orderCode}")
+    suspend fun tsdReleaseScan(@Path("orderCode") code: String): Map<String, Boolean>
+
+    @POST("tsd/ship")
+    suspend fun tsdShip(@Body body: TsdShipBody): TsdShipResponse
+
+    @GET("tsd/pickup-orders")
+    suspend fun tsdPickupOrders(): List<TsdPickupOrder>
+
+    @GET("tsd/users")
+    suspend fun tsdUsers(): List<TsdUser>
 }

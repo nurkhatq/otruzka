@@ -18,10 +18,10 @@ import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.otgruzka.tsd.api.SessionDateItem
-import com.otgruzka.tsd.api.UserItem
-import com.otgruzka.tsd.api.WmsApiClient
-import com.otgruzka.tsd.api.WmsSession
+import com.otgruzka.tsd.api.CoreApiClient
+import com.otgruzka.tsd.api.TsdShift
+import com.otgruzka.tsd.api.TsdShiftDate
+import com.otgruzka.tsd.api.TsdUser
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -30,15 +30,15 @@ class HistoryActivity : AppCompatActivity() {
 
     private enum class ViewMode { DATE_LIST, SESSION_LIST }
 
-    private lateinit var api: com.otgruzka.tsd.api.WmsApi
+    private lateinit var api: com.otgruzka.tsd.api.CoreApi
 
     private var viewMode = ViewMode.DATE_LIST
     private var selectedDate: String? = null
 
-    private val sessions = mutableListOf<WmsSession>()
-    private val userItems = mutableListOf<UserItem>()
-    private var filterWarehouseId: Int? = null
-    private var filterUserId: Int? = null
+    private val sessions = mutableListOf<TsdShift>()
+    private val userItems = mutableListOf<TsdUser>()
+    private var filterCity: String? = null
+    private var filterUsername: String? = null
     private var filterSearch: String? = null
     private var currentPage = 0
     private val pageSize = 30
@@ -66,16 +66,16 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    private val warehouseList = listOf(
-        0 to "Все склады",
-        1 to "PP1 Шымкент",
-        2 to "PP2 Алматы",
-        5 to "PP5 Астана"
+    private val warehouseList: List<Pair<String?, String>> = listOf(
+        null to "Все города",
+        "shymkent" to "Шымкент",
+        "almaty" to "Алматы",
+        "astana" to "Астана",
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        api = WmsApiClient.build(this)
+        api = CoreApiClient.build(this)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -122,7 +122,7 @@ class HistoryActivity : AppCompatActivity() {
         setContentView(root)
 
         lifecycleScope.launch {
-            try { userItems.addAll(api.getUsersList()) } catch (_: Exception) {}
+            try { userItems.addAll(api.tsdUsers()) } catch (_: Exception) {}
         }
 
         showDateList()
@@ -196,7 +196,7 @@ class HistoryActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val dates = api.getSessionDates()
+                val dates = api.getShiftDates()
                 progressBar.visibility = View.GONE
                 if (dates.isEmpty()) {
                     contentLayout.addView(emptyLabel("Нет сессий")); return@launch
@@ -212,7 +212,7 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildDateCard(item: SessionDateItem): View {
+    private fun buildDateCard(item: TsdShiftDate): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             background = roundedBg(Color.WHITE, dp(14))
@@ -281,8 +281,8 @@ class HistoryActivity : AppCompatActivity() {
         viewMode = ViewMode.SESSION_LIST
         selectedDate = date
         tvTitle.text = formatDateDisplay(date)
-        filterWarehouseId = null
-        filterUserId = null
+        filterCity = null
+        filterUsername = null
         filterSearch = null
         sessions.clear()
         currentPage = 0
@@ -331,7 +331,7 @@ class HistoryActivity : AppCompatActivity() {
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                     val v2 = if (pos == 0) null else warehouseList[pos].first
-                    if (v2 != filterWarehouseId) { filterWarehouseId = v2; resetAndLoad() }
+                    if (v2 != filterCity) { filterCity = v2; resetAndLoad() }
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
@@ -345,8 +345,8 @@ class HistoryActivity : AppCompatActivity() {
             adapter = userAdapter
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    val v2 = if (pos == 0) null else userItems.getOrNull(pos - 1)?.id
-                    if (v2 != filterUserId) { filterUserId = v2; resetAndLoad() }
+                    val v2 = if (pos == 0) null else userItems.getOrNull(pos - 1)?.username
+                    if (v2 != filterUsername) { filterUsername = v2; resetAndLoad() }
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
@@ -391,11 +391,11 @@ class HistoryActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val resp = api.getSessions(
+                val resp = api.getShifts(
                     page = currentPage,
                     pageSize = pageSize,
-                    warehouseId = filterWarehouseId,
-                    userId = filterUserId,
+                    city = filterCity,
+                    username = filterUsername,
                     search = filterSearch,
                     dateFrom = selectedDate,
                     dateTo = selectedDate,
@@ -422,7 +422,7 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildCard(s: WmsSession): View {
+    private fun buildCard(s: TsdShift): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = roundedBg(Color.WHITE, dp(14))
@@ -446,7 +446,7 @@ class HistoryActivity : AppCompatActivity() {
         card.addView(row1)
 
         card.addView(TextView(this).apply {
-            text = formatTime(s.started_at); textSize = 12f
+            text = formatTime(s.started_at ?: ""); textSize = 12f
             setTextColor(Color.parseColor("#9896A8")); setPadding(0, dp(3), 0, dp(10))
         })
         card.addView(View(this).apply {
@@ -456,7 +456,7 @@ class HistoryActivity : AppCompatActivity() {
 
         val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         row2.addView(TextView(this).apply {
-            text = WmsAuth.WAREHOUSE_NAMES[s.warehouse_id] ?: "Склад ${s.warehouse_id}"
+            text = CoreAuth.cityLabel(s.city)
             textSize = 12f; setTextColor(Color.parseColor("#6B6880")); layoutParams = lp(0, wrapH, 1f)
         })
         if (!s.user_name.isNullOrBlank()) {

@@ -5,21 +5,13 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.TextView
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.otgruzka.tsd.api.CoreApiClient
-import com.otgruzka.tsd.api.CoreStore
+import com.otgruzka.tsd.api.WmsApiClient
 import kotlinx.coroutines.launch
 
-/**
- * Вход сборщика в ядро novamanya (qoimams.asia). Аккаунты — те же, что у
- * веб-сборщика; после входа подтягиваем профиль (город) и список магазинов.
- */
-class PickerLoginActivity : AppCompatActivity() {
+class WmsLoginActivity : AppCompatActivity() {
 
     private lateinit var etUsername: EditText
     private lateinit var etPassword: EditText
@@ -29,7 +21,7 @@ class PickerLoginActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (CoreAuth.isLoggedIn(this)) { startTasks(); return }
+        if (WmsAuth.isLoggedIn(this)) { startInventory(); return }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -39,7 +31,7 @@ class PickerLoginActivity : AppCompatActivity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "СБОРКА"
+            text = "ИНВЕНТАРИЗАЦИЯ"
             textSize = 34f
             setTypeface(null, Typeface.BOLD)
             setTextColor(getColor(R.color.primary))
@@ -47,7 +39,7 @@ class PickerLoginActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
         })
         root.addView(TextView(this).apply {
-            text = "Сборщик заказов · qoimams.asia"
+            text = "Вход в старый склад (только инвентаризация)"
             textSize = 13f
             setTextColor(getColor(R.color.secondary))
             gravity = Gravity.CENTER
@@ -62,19 +54,19 @@ class PickerLoginActivity : AppCompatActivity() {
         }
 
         card.addView(fieldLabel("ЛОГИН"))
-        etUsername = editField("Логин сборщика", false)
-        card.addView(etUsername, wrapLp(0, dp(14)))
+        etUsername = editField("Введите логин", false)
+        card.addView(etUsername, wrapLp(dp(0), dp(14)))
 
         card.addView(fieldLabel("ПАРОЛЬ"))
-        etPassword = editField("Пароль", true)
-        card.addView(etPassword, wrapLp(0, dp(10)))
+        etPassword = editField("Введите пароль", true)
+        card.addView(etPassword, wrapLp(dp(0), dp(10)))
 
         tvError = TextView(this).apply {
             textSize = 13f
             setTextColor(getColor(R.color.error))
             visibility = View.GONE
         }
-        card.addView(tvError, wrapLp(0, dp(18)))
+        card.addView(tvError, wrapLp(dp(0), dp(18)))
 
         btnLogin = Button(this).apply {
             text = "Войти"
@@ -83,6 +75,7 @@ class PickerLoginActivity : AppCompatActivity() {
             setTextColor(getColor(R.color.on_primary))
             backgroundTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.on_background))
             isAllCaps = false
+            setPadding(0, dp(14), 0, dp(14))
             setOnClickListener { doLogin() }
         }
         card.addView(btnLogin, LinearLayout.LayoutParams(
@@ -92,8 +85,8 @@ class PickerLoginActivity : AppCompatActivity() {
         root.addView(card)
 
         root.addView(TextView(this).apply {
-            text = "← Назад к отгрузке"
-            textSize = 13f
+            text = "← Назад"
+            textSize = 14f
             setTextColor(getColor(R.color.secondary))
             gravity = Gravity.CENTER
             setPadding(0, dp(24), 0, 0)
@@ -110,24 +103,13 @@ class PickerLoginActivity : AppCompatActivity() {
         btnLogin.isEnabled = false; btnLogin.text = "Вход…"
         tvError.visibility = View.GONE
 
-        val api = CoreApiClient.build(this)
+        val api = WmsApiClient.build(this)
         lifecycleScope.launch {
             try {
                 val resp = api.login(username, password)
-                CoreAuth.save(
-                    this@PickerLoginActivity, resp.access_token,
-                    username, password, null, "operator", null
-                )
-                CoreApiClient.reset()
-                val me = CoreApiClient.build(this@PickerLoginActivity).me()
-                CoreAuth.save(
-                    this@PickerLoginActivity, resp.access_token,
-                    username, password, me.full_name, me.role, me.city
-                )
-                val stores = try {
-                    CoreApiClient.build(this@PickerLoginActivity).stores()
-                } catch (_: Exception) { emptyList() }
-                afterLogin(stores, me.city)
+                WmsAuth.save(this@WmsLoginActivity, resp.access_token, resp.user, password)
+                WmsApiClient.reset()
+                startInventory()
             } catch (e: retrofit2.HttpException) {
                 val msg = try {
                     val body = e.response()?.errorBody()?.string() ?: ""
@@ -142,53 +124,12 @@ class PickerLoginActivity : AppCompatActivity() {
         }
     }
 
-    /** Магазин: один — берём сразу, несколько — спрашиваем. Потом город (если не заперт). */
-    private fun afterLogin(stores: List<CoreStore>, userCity: String?) {
-        when {
-            stores.isEmpty() -> chooseCityIfNeeded(userCity)
-            stores.size == 1 -> {
-                CoreAuth.setStore(this, stores[0].id, stores[0].name ?: stores[0].code)
-                chooseCityIfNeeded(userCity)
-            }
-            else -> {
-                val names = stores.map { it.name ?: it.code ?: "Магазин ${it.id}" }.toTypedArray()
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Магазин")
-                    .setCancelable(false)
-                    .setItems(names) { _, i ->
-                        CoreAuth.setStore(this, stores[i].id, names[i])
-                        chooseCityIfNeeded(userCity)
-                    }
-                    .show()
-            }
-        }
-    }
-
-    private fun chooseCityIfNeeded(userCity: String?) {
-        if (!userCity.isNullOrBlank() || CoreAuth.cityLocked(this)) {
-            if (CoreAuth.city(this).isNullOrBlank() && !userCity.isNullOrBlank()) {
-                CoreAuth.setCity(this, userCity)
-            }
-            startTasks(); return
-        }
-        val keys = CoreAuth.CITY_NAMES.keys.toList()
-        val names = CoreAuth.CITY_NAMES.values.toTypedArray()
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Город сборки")
-            .setCancelable(false)
-            .setItems(names) { _, i ->
-                CoreAuth.setCity(this, keys[i])
-                startTasks()
-            }
-            .show()
-    }
-
     private fun showError(msg: String) {
         tvError.text = msg; tvError.visibility = View.VISIBLE
     }
 
-    private fun startTasks() {
-        startActivity(Intent(this, PickerTasksActivity::class.java)); finish()
+    private fun startInventory() {
+        startActivity(Intent(this, InventoryActivity::class.java)); finish()
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()

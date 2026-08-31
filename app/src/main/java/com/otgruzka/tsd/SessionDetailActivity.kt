@@ -18,16 +18,16 @@ import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.otgruzka.tsd.api.SessionScan
-import com.otgruzka.tsd.api.SessionStats
-import com.otgruzka.tsd.api.WmsApiClient
+import com.otgruzka.tsd.api.CoreApiClient
+import com.otgruzka.tsd.api.TsdScanItem
+import com.otgruzka.tsd.api.TsdShiftStats
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
 class SessionDetailActivity : AppCompatActivity() {
 
-    private lateinit var api: com.otgruzka.tsd.api.WmsApi
+    private lateinit var api: com.otgruzka.tsd.api.CoreApi
     private lateinit var batchId: String
 
     private lateinit var scanListContainer: LinearLayout
@@ -64,21 +64,19 @@ class SessionDetailActivity : AppCompatActivity() {
         "SUCCESS"         to ("Готово к отгрузке"  to Color.parseColor("#1A6B36")),
         "ALREADY_SHIPPED" to ("Уже был отгружен"   to Color.parseColor("#5956E8")),
         "ALREADY_LOCKED"  to ("Занят другим ТСД"   to Color.parseColor("#D96000")),
-        "KASPI_ONLY"      to ("Только в Kaspi"      to Color.parseColor("#9896A8")),
         "CANCELLING"      to ("Отменяется"          to Color.parseColor("#C42828")),
         "NOT_FOUND"       to ("Не найден"           to Color.parseColor("#9896A8"))
     )
 
     // demand_status → (русский текст, цвет)
     private val demandStatusLabels = mapOf(
-        "CREATED"   to ("Отгрузка создана"       to Color.parseColor("#1A6B36")),
-        "NOT_IN_MS" to ("Не импортирован в МС"   to Color.parseColor("#D96000")),
-        "ERROR"     to ("Ошибка при создании"    to Color.parseColor("#C42828"))
+        "CREATED"   to ("Отгружена в qoimams"    to Color.parseColor("#1A6B36")),
+        "ERROR"     to ("Ошибка при отгрузке"    to Color.parseColor("#C42828"))
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        api = WmsApiClient.build(this)
+        api = CoreApiClient.build(this)
         batchId = intent.getStringExtra("batch_id") ?: run { finish(); return }
 
         val root = LinearLayout(this).apply {
@@ -200,7 +198,7 @@ class SessionDetailActivity : AppCompatActivity() {
         // Load stats and first scans
         lifecycleScope.launch {
             try {
-                val stats = api.getSessionStats(batchId)
+                val stats = api.getShiftStats(batchId)
                 progressBar.visibility = View.GONE
 
                 // Build header card
@@ -268,7 +266,7 @@ class SessionDetailActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildHeaderCard(stats: SessionStats): View {
+    private fun buildHeaderCard(stats: TsdShiftStats): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = cardDrawable(Color.WHITE, 12)
@@ -280,7 +278,7 @@ class SessionDetailActivity : AppCompatActivity() {
         }
 
         // Date range
-        val startStr = formatDateTime(stats.started_at)
+        val startStr = formatDateTime(stats.started_at ?: "")
         val endStr = if (!stats.completed_at.isNullOrBlank()) formatDateTime(stats.completed_at) else "—"
         card.addView(infoRow("Дата:", "$startStr — $endStr"))
 
@@ -300,9 +298,8 @@ class SessionDetailActivity : AppCompatActivity() {
             card.addView(infoRow("Сотрудник:", stats.user_name))
         }
 
-        // Warehouse
-        val whName = WmsAuth.WAREHOUSE_NAMES[stats.warehouse_id] ?: "Склад ${stats.warehouse_id}"
-        card.addView(infoRow("Склад:", whName))
+        // Город склада
+        card.addView(infoRow("Город:", CoreAuth.cityLabel(stats.city)))
 
         return card
     }
@@ -329,7 +326,7 @@ class SessionDetailActivity : AppCompatActivity() {
         return row
     }
 
-    private fun buildStatsGrid(stats: SessionStats): View {
+    private fun buildStatsGrid(stats: TsdShiftStats): View {
         // 2-column grid: left column and right column
         val gridRow1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val gridRow2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -337,7 +334,6 @@ class SessionDetailActivity : AppCompatActivity() {
 
         val totalScanned = stats.total_scanned
         val shipped = stats.by_demand["CREATED"] ?: 0
-        val notInMs = stats.by_demand["NOT_IN_MS"] ?: 0
         val success = stats.by_result["SUCCESS"] ?: 0
         val alreadyLocked = stats.by_result["ALREADY_LOCKED"] ?: 0
         val notFound = stats.by_result["NOT_FOUND"] ?: 0
@@ -345,7 +341,6 @@ class SessionDetailActivity : AppCompatActivity() {
         gridRow1.addView(statCard("Всего заказов", totalScanned, Color.parseColor("#5956E8")))
         gridRow1.addView(statCard("Отгружено", shipped, Color.parseColor("#1A6B36")))
         gridRow2.addView(statCard("Готово", success, Color.parseColor("#2E8B57")))
-        gridRow2.addView(statCard("Нет в МС", notInMs, Color.parseColor("#D96000")))
         gridRow3.addView(statCard("Занят ТСД", alreadyLocked, Color.parseColor("#D4A000")))
         gridRow3.addView(statCard("Не найден", notFound, Color.parseColor("#9896A8")))
 
@@ -415,7 +410,6 @@ class SessionDetailActivity : AppCompatActivity() {
             null          to "Все",
             "SUCCESS"     to "Готово к отгр.",
             "ALREADY_SHIPPED" to "Отгружено",
-            "KASPI_ONLY"  to "Нет в МС",
             "ALREADY_LOCKED" to "Занят ТСД",
             "CANCELLING"  to "Отменяется",
             "NOT_FOUND"   to "Не найден"
@@ -474,8 +468,8 @@ class SessionDetailActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val resp = api.getSessionScans(
-                    batchId = batchId,
+                val resp = api.getShiftScans(
+                    shiftId = batchId,
                     page = currentPage,
                     pageSize = pageSize,
                     scanResult = currentFilter,
@@ -505,7 +499,7 @@ class SessionDetailActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildScanRow(scan: SessionScan): View {
+    private fun buildScanRow(scan: TsdScanItem): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = cardDrawable(Color.WHITE, 8)

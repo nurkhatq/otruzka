@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var api: WmsApi
+    private lateinit var api: CoreApi
     private var tsdId: String = "TSD"
 
     // Views
@@ -53,7 +53,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) {
         val toRemove = scanItems.entries
-            .filter { it.value.status == ScanStatus.READY || it.value.status == ScanStatus.KASPI_ONLY }
+            .filter { it.value.status == ScanStatus.READY }
             .map { it.key }
         toRemove.forEach { scanItems.remove(it) }
         refreshScanList()
@@ -73,11 +73,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (!WmsAuth.isLoggedIn(this)) {
+        if (!CoreAuth.isLoggedIn(this)) {
             startActivity(Intent(this, LoginActivity::class.java)); finish(); return
         }
-        api = WmsApiClient.build(this)
-        tsdId = WmsAuth.getUser(this)?.username ?: "TSD"
+        api = CoreApiClient.build(this)
+        tsdId = CoreAuth.username(this) ?: "TSD"
 
         setContentView(R.layout.activity_main)
         bindViews()
@@ -103,12 +103,13 @@ class MainActivity : AppCompatActivity() {
 
         tvEndShift.setOnClickListener { confirmEndShift() }
         findViewById<TextView>(R.id.tvPicker).setOnClickListener {
-            val target = if (CoreAuth.isLoggedIn(this))
-                PickerTasksActivity::class.java else PickerLoginActivity::class.java
-            startActivity(Intent(this, target))
+            startActivity(Intent(this, PickerTasksActivity::class.java))
         }
         findViewById<TextView>(R.id.tvInventory).setOnClickListener {
-            startActivity(Intent(this, InventoryActivity::class.java))
+            // Инвентаризация пока живёт на старом складе — вход отдельный
+            val target = if (WmsAuth.isLoggedIn(this))
+                InventoryActivity::class.java else WmsLoginActivity::class.java
+            startActivity(Intent(this, target))
         }
         findViewById<TextView>(R.id.tvHistory).setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
@@ -173,14 +174,14 @@ class MainActivity : AppCompatActivity() {
     // ─── Session ─────────────────────────────────────────────────────────────
 
     private fun initSession() {
-        val user = WmsAuth.getUser(this) ?: return
-        val wh = WmsAuth.WAREHOUSE_NAMES[user.warehouse_id] ?: "Склад ${user.warehouse_id}"
-        tvUser.text = "${user.full_name}  ·  $wh"
+        val name = CoreAuth.fullName(this) ?: CoreAuth.username(this) ?: ""
+        val city = CoreAuth.cityLabel(CoreAuth.city(this))
+        tvUser.text = "$name  ·  $city"
         tvSession.text = "Подключение…"
         lifecycleScope.launch {
             try {
-                val existing = runCatching { api.getActiveSession() }.getOrNull()
-                val session = existing ?: api.createSession(CreateSessionBody())
+                val existing = runCatching { api.getActiveShift() }.getOrNull()
+                val session = existing ?: api.createShift()
                 ScanCache.currentSession = session
                 if (existing != null && existing.order_count > 0) {
                     restoreFromSession(existing.batch_id)
@@ -195,11 +196,11 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun restoreFromSession(batchId: String) {
         try {
-            val scans = api.getSessionScans(batchId, pageSize = 200)
+            val scans = api.getShiftScans(batchId, pageSize = 200)
             scans.items
-                .filter { it.demand_status == null && (it.scan_result == "SUCCESS" || it.scan_result == "KASPI_ONLY") }
+                .filter { it.demand_status == null && it.scan_result == "SUCCESS" }
                 .forEach { scan ->
-                    val status = if (scan.scan_result == "KASPI_ONLY") ScanStatus.KASPI_ONLY else ScanStatus.READY
+                    val status = ScanStatus.READY
                     scanItems[scan.order_code] = ScannedItem(
                         code = scan.order_code,
                         status = status,
@@ -270,15 +271,14 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val res = api.scanLock(ScanLockRequest(code, batchId))
-                val status = when {
-                    res.result == "ALREADY_SHIPPED"  -> ScanStatus.SHIPPED
-                    res.result == "CANCELLING"        -> ScanStatus.CANCELLING
-                    res.result == "NOT_FOUND"         -> ScanStatus.NOT_FOUND
-                    res.result == "ALREADY_LOCKED"    -> ScanStatus.LOCKED_BY_OTHER
-                    res.result == "SUCCESS" && res.order?.source == "kaspi" -> ScanStatus.KASPI_ONLY
-                    res.result == "SUCCESS"           -> ScanStatus.READY
-                    else                              -> ScanStatus.NOT_FOUND
+                val res = api.tsdScan(TsdScanBody(code))
+                val status = when (res.result) {
+                    "ALREADY_SHIPPED" -> ScanStatus.SHIPPED
+                    "CANCELLING"      -> ScanStatus.CANCELLING
+                    "NOT_FOUND"       -> ScanStatus.NOT_FOUND
+                    "ALREADY_LOCKED"  -> ScanStatus.LOCKED_BY_OTHER
+                    "SUCCESS"         -> ScanStatus.READY
+                    else              -> ScanStatus.NOT_FOUND
                 }
                 scanItems[code] = ScannedItem(
                     code        = code,
@@ -327,7 +327,6 @@ class MainActivity : AppCompatActivity() {
         val (labelText, labelColor) = when (item.status) {
             ScanStatus.READY           -> "ГОТОВО К ОТГРУЗКЕ"   to getColor(R.color.success)
             ScanStatus.SHIPPED         -> "УЖЕ ОТГРУЖЕНА"        to getColor(R.color.warning)
-            ScanStatus.KASPI_ONLY      -> "МС НЕ ИМПОРТИРОВАЛ"   to getColor(R.color.warning)
             ScanStatus.CANCELLING      -> "ОТМЕНА"               to getColor(R.color.error)
             ScanStatus.NOT_FOUND       -> "НЕ НАЙДЕН"            to getColor(R.color.secondary)
             ScanStatus.LOCKED_BY_OTHER -> "УЖЕ БЕРЁТСЯ"          to getColor(R.color.warning)
@@ -373,15 +372,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (!item.customerName.isNullOrBlank()) row.addView(small(item.customerName))
-        if (item.status == ScanStatus.READY || item.status == ScanStatus.SHIPPED || item.status == ScanStatus.KASPI_ONLY) {
+        if (item.status == ScanStatus.READY || item.status == ScanStatus.SHIPPED) {
             if (item.totalPrice > 0) row.addView(small("₸ ${fmtPrice(item.totalPrice)}"))
             val chips = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(4), 0, 0)
             }
             if (item.assembled) chips.addView(chip("Собран",    getColor(R.color.success)))
             if (item.express)   chips.addView(chip("Экспресс",  getColor(R.color.warning)))
-            if (item.status == ScanStatus.KASPI_ONLY)
-                chips.addView(chip("Нет в МС", getColor(R.color.secondary)))
             if (chips.childCount > 0) row.addView(chips)
         }
         return row
@@ -390,9 +387,9 @@ class MainActivity : AppCompatActivity() {
     private fun removeItem(code: String) {
         val item = scanItems.remove(code) ?: return
         // Release lock only if we hold it (status where lock_acquired was true)
-        if (item.status == ScanStatus.READY || item.status == ScanStatus.KASPI_ONLY) {
+        if (item.status == ScanStatus.READY) {
             lifecycleScope.launch {
-                try { api.releaseLock(code) } catch (_: Exception) {}
+                try { api.tsdReleaseScan(code) } catch (_: Exception) {}
             }
         }
         refreshScanList()
@@ -402,7 +399,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun clearAll() {
         val toRelease = scanItems.values
-            .filter { it.status == ScanStatus.READY || it.status == ScanStatus.KASPI_ONLY }
+            .filter { it.status == ScanStatus.READY }
             .map { it.code }
         scanItems.clear()
         refreshScanList()
@@ -411,7 +408,7 @@ class MainActivity : AppCompatActivity() {
         if (toRelease.isNotEmpty()) {
             lifecycleScope.launch {
                 toRelease.forEach { code ->
-                    try { api.releaseLock(code) } catch (_: Exception) {}
+                    try { api.tsdReleaseScan(code) } catch (_: Exception) {}
                 }
             }
         }
@@ -421,7 +418,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun createDemands() {
         val readyCodes = scanItems.values
-            .filter { it.status == ScanStatus.READY || it.status == ScanStatus.KASPI_ONLY }
+            .filter { it.status == ScanStatus.READY }
             .map { it.code }
         if (readyCodes.isEmpty()) return
 
@@ -437,7 +434,7 @@ class MainActivity : AppCompatActivity() {
         tvPickupStatus.text = "Загрузка…"
         lifecycleScope.launch {
             try {
-                val orders = api.getOrders(state = "PICKUP", pageSize = 200)
+                val orders = api.tsdPickupOrders()
                 ScanCache.pickupOrders = orders
                 ScanCache.pickupLoaded = true
                 tvPickupStatus.text = "Самовывозы: ${orders.size}"
@@ -456,7 +453,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildPickupRow(order: KaspiOrder): View {
+    private fun buildPickupRow(order: TsdPickupOrder): View {
         val confirmed = ScanCache.confirmedPickups.contains(order.order_code)
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -499,7 +496,7 @@ class MainActivity : AppCompatActivity() {
         return row
     }
 
-    private fun handlePickupGive(order: KaspiOrder) {
+    private fun handlePickupGive(order: TsdPickupOrder) {
         ScanCache.confirmedPickups.add(order.order_code)
         refreshPickupList()
         updateSessionLabel()
@@ -554,7 +551,6 @@ class MainActivity : AppCompatActivity() {
     private fun playTone(status: ScanStatus) {
         when (status) {
             ScanStatus.READY           -> alarmBeep(880,  180, 1, 0,   square = false)  // чистый приятный
-            ScanStatus.KASPI_ONLY      -> alarmBeep(660,  200, 2, 100, square = false)  // 2 средних
             ScanStatus.CANCELLING      -> alarmBeep(3400, 130, 6, 55,  square = true)   // 6 резких высоких!!
             ScanStatus.SHIPPED         -> alarmBeep(1500, 220, 3, 90,  square = true)   // 3 жёстких
             ScanStatus.LOCKED_BY_OTHER -> alarmBeep(1900, 180, 4, 70,  square = true)   // 4 средних резких
@@ -627,7 +623,7 @@ class MainActivity : AppCompatActivity() {
     private fun endShift(batchId: String) {
         lifecycleScope.launch {
             try {
-                api.updateSession(batchId, "COMPLETED")
+                api.updateShift(batchId, "COMPLETED")
                 ScanCache.currentSession = null
                 scanItems.clear()
                 refreshScanList()
@@ -636,7 +632,7 @@ class MainActivity : AppCompatActivity() {
                 toast("Смена завершена и сохранена в истории")
                 // Start a fresh session
                 try {
-                    val newSession = api.createSession(CreateSessionBody())
+                    val newSession = api.createShift()
                     ScanCache.currentSession = newSession
                     tvSession.text = "Новая смена · собрано 0"
                 } catch (_: Exception) {
@@ -653,7 +649,7 @@ class MainActivity : AppCompatActivity() {
     private fun doLogout() {
         val batchId = ScanCache.currentSession?.batch_id
         val lockedCodes = scanItems.values
-            .filter { it.status == ScanStatus.READY || it.status == ScanStatus.KASPI_ONLY }
+            .filter { it.status == ScanStatus.READY }
             .map { it.code }
         val msg = if (lockedCodes.isNotEmpty())
             "${lockedCodes.size} заказов отсканировано. Сохранить для следующего входа или очистить?"
@@ -669,10 +665,10 @@ class MainActivity : AppCompatActivity() {
             .setNeutralButton("Очистить") { _, _ ->
                 lifecycleScope.launch {
                     lockedCodes.forEach { code ->
-                        try { api.releaseLock(code) } catch (_: Exception) {}
+                        try { api.tsdReleaseScan(code) } catch (_: Exception) {}
                     }
                     if (batchId != null) {
-                        try { api.updateSession(batchId, "CANCELLED") } catch (_: Exception) {}
+                        try { api.updateShift(batchId, "CANCELLED") } catch (_: Exception) {}
                     }
                     performLogout()
                 }
@@ -682,7 +678,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun performLogout() {
-        WmsAuth.logout(this); WmsApiClient.reset()
+        CoreAuth.logout(this); CoreApiClient.reset()
         ScanCache.currentSession = null
         ScanCache.pickupLoaded = false
         ScanCache.confirmedPickups.clear()

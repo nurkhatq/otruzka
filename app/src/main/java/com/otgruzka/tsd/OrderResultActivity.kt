@@ -8,11 +8,9 @@ import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.otgruzka.tsd.api.CreateDemandsRequest
-import com.otgruzka.tsd.api.DemandResult
-import com.otgruzka.tsd.api.WmsApiClient
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import com.otgruzka.tsd.api.CoreApiClient
+import com.otgruzka.tsd.api.TsdShipBody
+import com.otgruzka.tsd.api.TsdShipResult
 import kotlinx.coroutines.launch
 
 class OrderResultActivity : AppCompatActivity() {
@@ -22,8 +20,7 @@ class OrderResultActivity : AppCompatActivity() {
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val codes = intent.getStringArrayListExtra("codes") ?: arrayListOf()
-        val sessionBatchId = intent.getStringExtra("session_batch_id")
-        val api = WmsApiClient.build(this)
+        val api = CoreApiClient.build(this)
 
         // ── Root ────────────────────────────────────────────────────────────
         val root = LinearLayout(this).apply {
@@ -39,7 +36,7 @@ class OrderResultActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val tvTitle = TextView(this).apply {
-            text = "Создание отгрузок"
+            text = "Отгрузка в qoimams"
             textSize = 17f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#1A1A1A"))
@@ -82,7 +79,7 @@ class OrderResultActivity : AppCompatActivity() {
         }
 
         val tvSubStatus = TextView(this).apply {
-            text = "Отгрузки создаются в фоне"
+            text = "Отгрузка фиксируется в ядре qoimams"
             textSize = 12f
             setTextColor(Color.parseColor("#BCBAC8"))
             gravity = Gravity.CENTER
@@ -130,16 +127,14 @@ class OrderResultActivity : AppCompatActivity() {
         setContentView(root)
 
         // ── Summary card builder ────────────────────────────────────────────
-        fun showSummary(results: List<DemandResult>) {
-            var created = 0; var shipped = 0; var notInMs = 0; var errors = 0
+        fun showSummary(results: List<TsdShipResult>) {
+            var shipped = 0; var skipped = 0
 
             llResults.removeAllViews()
             results.forEach { r ->
                 when (r.status) {
-                    "CREATED"        -> { created++; addResultRow(llResults, "СОЗДАНА",       "#1A6B36", r.code, r.demand_name) }
-                    "ALREADY_SHIPPED"-> { shipped++; addResultRow(llResults, "УЖЕ ОТГРУЖЕНА", "#5956E8", r.code, null) }
-                    "NOT_IN_MS"      -> { notInMs++; addResultRow(llResults, "НЕТ В МС",      "#9896A8", r.code, null) }
-                    else             -> { errors++;  addResultRow(llResults, "ОШИБКА",         "#C42828", r.code, r.detail) }
+                    "SHIPPED" -> { shipped++; addResultRow(llResults, "ОТГРУЖЕНА", "#1A6B36", r.code, null) }
+                    else      -> { skipped++; addResultRow(llResults, "ПРОПУЩЕН",  "#9896A8", r.code, "не найден среди сканов смены") }
                 }
             }
 
@@ -149,74 +144,27 @@ class OrderResultActivity : AppCompatActivity() {
                 setPadding(0, dp(12), 0, 0)
                 gravity = Gravity.CENTER_HORIZONTAL
             }
-            if (created > 0)  summaryRow.addView(summaryChip("Создано $created",  "#1A6B36", "#E6F4EC"))
-            if (shipped > 0)  summaryRow.addView(summaryChip("Отгружено $shipped","#5956E8", "#EEEDFB"))
-            if (notInMs > 0)  summaryRow.addView(summaryChip("Нет в МС $notInMs","#9896A8", "#F3F3F5"))
-            if (errors > 0)   summaryRow.addView(summaryChip("Ошибок $errors",   "#C42828", "#FDEAEA"))
+            if (shipped > 0) summaryRow.addView(summaryChip("Отгружено $shipped", "#1A6B36", "#E6F4EC"))
+            if (skipped > 0) summaryRow.addView(summaryChip("Пропущено $skipped", "#9896A8", "#F3F3F5"))
             llResults.addView(summaryRow)
         }
 
-        // ── Polling loop ────────────────────────────────────────────────────
+        // ── Ship (синхронно, ядро отвечает сразу) ───────────────────────────
         lifecycleScope.launch {
             try {
-                val jobResp = api.createDemands(CreateDemandsRequest(codes, sessionBatchId))
-                val jobId = jobResp.job_id
-
-                if (jobId == null) {
-                    // No token or instant error
-                    tvStatus.text = "Ошибка конфигурации"
-                    tvCount.text = "—"
-                    btnBack.visibility = View.VISIBLE
-                    return@launch
-                }
-
-                tvStatus.text = "Создаётся…"
-
-                // Poll until DONE or ERROR
-                while (isActive) {
-                    delay(2000)
-                    try {
-                        val job = api.getDemandJob(jobId)
-                        val done = job.done
-                        val total = job.total.coerceAtLeast(1)
-
-                        progressBar.max = total
-                        progressBar.progress = done
-                        tvCount.text = "$done из $total"
-
-                        when (job.status) {
-                            "DONE" -> {
-                                tvStatus.text = "Готово"
-                                tvSubStatus.text = ""
-                                tvCount.text = "$total из $total"
-                                progressBar.progress = total
-                                btnBack.visibility = View.VISIBLE
-                                resultsHeader.visibility = View.VISIBLE
-                                job.results?.let { showSummary(it) }
-                                break
-                            }
-                            "ERROR" -> {
-                                tvStatus.text = "Завершено с ошибками"
-                                tvSubStatus.text = ""
-                                btnBack.visibility = View.VISIBLE
-                                resultsHeader.visibility = View.VISIBLE
-                                job.results?.let { showSummary(it) }
-                                break
-                            }
-                            "NOT_FOUND" -> {
-                                tvStatus.text = "Задание не найдено"
-                                btnBack.visibility = View.VISIBLE
-                                break
-                            }
-                            // PROCESSING — continue polling
-                        }
-                    } catch (_: Exception) {
-                        // Network blip — keep polling
-                    }
-                }
-
+                tvStatus.text = "Отгружаем…"
+                val resp = api.tsdShip(TsdShipBody(codes))
+                val total = codes.size.coerceAtLeast(1)
+                progressBar.max = total
+                progressBar.progress = total
+                tvCount.text = "${resp.shipped} из ${codes.size}"
+                tvStatus.text = "Готово"
+                tvSubStatus.text = ""
+                btnBack.visibility = View.VISIBLE
+                resultsHeader.visibility = View.VISIBLE
+                showSummary(resp.results)
             } catch (e: Exception) {
-                tvStatus.text = "Ошибка запуска"
+                tvStatus.text = "Ошибка отгрузки"
                 tvSubStatus.text = e.message?.take(80) ?: "Нет соединения"
                 btnBack.visibility = View.VISIBLE
             }

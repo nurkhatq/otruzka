@@ -5,12 +5,20 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
-import android.widget.*
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.otgruzka.tsd.api.WmsApiClient
+import com.otgruzka.tsd.api.CoreApiClient
 import kotlinx.coroutines.launch
 
+/**
+ * Единый вход в ядро novamanya (qoimams.asia) — отгрузка и сборка работают
+ * под одним аккаунтом ядра. Старый wms-логин остался только у инвентаризации
+ * (WmsLoginActivity).
+ */
 class LoginActivity : AppCompatActivity() {
 
     private lateinit var etUsername: EditText
@@ -21,7 +29,7 @@ class LoginActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (WmsAuth.isLoggedIn(this)) { startMain(); return }
+        if (CoreAuth.isLoggedIn(this)) { startMain(); return }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -31,7 +39,7 @@ class LoginActivity : AppCompatActivity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "ОТГРУЗКИ"
+            text = "NOVAMANYA"
             textSize = 34f
             setTypeface(null, Typeface.BOLD)
             setTextColor(getColor(R.color.primary))
@@ -39,7 +47,7 @@ class LoginActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
         })
         root.addView(TextView(this).apply {
-            text = "WMS · Управление складом"
+            text = "ТСД · Отгрузка и сборка · qoimams.asia"
             textSize = 13f
             setTextColor(getColor(R.color.secondary))
             gravity = Gravity.CENTER
@@ -55,18 +63,18 @@ class LoginActivity : AppCompatActivity() {
 
         card.addView(fieldLabel("ЛОГИН"))
         etUsername = editField("Введите логин", false)
-        card.addView(etUsername, wrapLp(dp(0), dp(14)))
+        card.addView(etUsername, wrapLp(0, dp(14)))
 
         card.addView(fieldLabel("ПАРОЛЬ"))
         etPassword = editField("Введите пароль", true)
-        card.addView(etPassword, wrapLp(dp(0), dp(10)))
+        card.addView(etPassword, wrapLp(0, dp(10)))
 
         tvError = TextView(this).apply {
             textSize = 13f
             setTextColor(getColor(R.color.error))
             visibility = View.GONE
         }
-        card.addView(tvError, wrapLp(dp(0), dp(18)))
+        card.addView(tvError, wrapLp(0, dp(18)))
 
         btnLogin = Button(this).apply {
             text = "Войти"
@@ -75,7 +83,6 @@ class LoginActivity : AppCompatActivity() {
             setTextColor(getColor(R.color.on_primary))
             backgroundTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.on_background))
             isAllCaps = false
-            setPadding(0, dp(14), 0, dp(14))
             setOnClickListener { doLogin() }
         }
         card.addView(btnLogin, LinearLayout.LayoutParams(
@@ -83,18 +90,6 @@ class LoginActivity : AppCompatActivity() {
         ))
 
         root.addView(card)
-
-        root.addView(TextView(this).apply {
-            text = "Я сборщик → вход в сборку"
-            textSize = 14f
-            setTextColor(getColor(R.color.primary))
-            gravity = Gravity.CENTER
-            setPadding(0, dp(24), 0, 0)
-            setOnClickListener {
-                startActivity(Intent(this@LoginActivity, PickerLoginActivity::class.java))
-            }
-        })
-
         setContentView(root)
     }
 
@@ -105,12 +100,27 @@ class LoginActivity : AppCompatActivity() {
         btnLogin.isEnabled = false; btnLogin.text = "Вход…"
         tvError.visibility = View.GONE
 
-        val api = WmsApiClient.build(this)
+        val api = CoreApiClient.build(this)
         lifecycleScope.launch {
             try {
                 val resp = api.login(username, password)
-                WmsAuth.save(this@LoginActivity, resp.access_token, resp.user, password)
-                WmsApiClient.reset()
+                CoreAuth.save(this@LoginActivity, resp.access_token, username, password, null, "operator", null)
+                CoreApiClient.reset()
+                val coreApi = CoreApiClient.build(this@LoginActivity)
+                val me = coreApi.me()
+                CoreAuth.save(
+                    this@LoginActivity, resp.access_token,
+                    username, password, me.full_name, me.role, me.city
+                )
+                // Магазин для сборщика: один — берём сразу
+                try {
+                    val stores = coreApi.stores()
+                    if (stores.size == 1) {
+                        CoreAuth.setStore(this@LoginActivity, stores[0].id, stores[0].name ?: stores[0].code)
+                    } else if (CoreAuth.storeId(this@LoginActivity) == 0 && stores.isNotEmpty()) {
+                        CoreAuth.setStore(this@LoginActivity, stores[0].id, stores[0].name ?: stores[0].code)
+                    }
+                } catch (_: Exception) {}
                 startMain()
             } catch (e: retrofit2.HttpException) {
                 val msg = try {

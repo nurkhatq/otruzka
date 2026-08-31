@@ -3,7 +3,7 @@ package com.otgruzka.tsd.api
 import android.content.Context
 import android.content.Intent
 import com.otgruzka.tsd.CoreAuth
-import com.otgruzka.tsd.PickerLoginActivity
+import com.otgruzka.tsd.LoginActivity
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -47,7 +47,7 @@ object CoreApiClient {
                 if (username == null || password == null) {
                     CoreAuth.logout(appCtx)
                     appCtx.startActivity(
-                        Intent(appCtx, PickerLoginActivity::class.java)
+                        Intent(appCtx, LoginActivity::class.java)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     )
                     return@authenticator null
@@ -69,7 +69,7 @@ object CoreApiClient {
                 } catch (_: Exception) {
                     CoreAuth.logout(appCtx)
                     appCtx.startActivity(
-                        Intent(appCtx, PickerLoginActivity::class.java)
+                        Intent(appCtx, LoginActivity::class.java)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     )
                     null

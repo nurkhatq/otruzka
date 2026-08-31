@@ -1,9 +1,9 @@
 package com.otgruzka.tsd
 
-import com.otgruzka.tsd.api.KaspiOrder
-import com.otgruzka.tsd.api.WmsSession
+import com.otgruzka.tsd.api.TsdPickupOrder
+import com.otgruzka.tsd.api.TsdShift
 
-enum class ScanStatus { CHECKING, READY, SHIPPED, KASPI_ONLY, CANCELLING, NOT_FOUND, LOCKED_BY_OTHER }
+enum class ScanStatus { CHECKING, READY, SHIPPED, CANCELLING, NOT_FOUND, LOCKED_BY_OTHER }
 
 data class ScannedItem(
     val code: String,
@@ -17,8 +17,8 @@ data class ScannedItem(
 )
 
 object ScanCache {
-    var currentSession: WmsSession? = null
-    var pickupOrders: List<KaspiOrder> = emptyList()
+    var currentSession: TsdShift? = null
+    var pickupOrders: List<TsdPickupOrder> = emptyList()
     var pickupLoaded: Boolean = false
     var confirmedPickups: MutableSet<String> = mutableSetOf()
 }
