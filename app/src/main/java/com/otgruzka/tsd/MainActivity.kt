@@ -144,6 +144,52 @@ class MainActivity : AppCompatActivity() {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(scanReceiver, filter)
         }
+        checkForUpdate()
+    }
+
+    // ─── Обновление приложения по кнопке ─────────────────────────────────────
+
+    private var updateBanner: TextView? = null
+    private var updateInfo: AppUpdater.Info? = null
+
+    private fun checkForUpdate() {
+        lifecycleScope.launch {
+            val info = AppUpdater.check(this@MainActivity) ?: return@launch
+            updateInfo = info
+            showUpdateBanner("Доступно обновление v${info.version_name ?: info.version_code} — нажмите, чтобы установить")
+        }
+    }
+
+    private fun showUpdateBanner(text: String) {
+        val root = findViewById<LinearLayout>(R.id.rootMain) ?: return
+        if (updateBanner == null) {
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            updateBanner = TextView(this).apply {
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+                gravity = android.view.Gravity.CENTER
+                setTextColor(0xFFFFFFFF.toInt())
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0xFF16A34A.toInt())   // зелёный как в пикере
+                    cornerRadius = dp(12).toFloat()
+                }
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                setOnClickListener {
+                    val info = updateInfo ?: return@setOnClickListener
+                    AppUpdater.startDownload(this@MainActivity, info) { status ->
+                        runOnUiThread { updateBanner?.text = status }
+                    }
+                }
+            }
+            // Под шапкой (шапка — child 0 корневого LinearLayout)
+            root.addView(updateBanner, 1, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(8), dp(12), 0) })
+        }
+        updateBanner?.text = text
+        updateBanner?.visibility = View.VISIBLE
     }
 
     override fun onPause() {

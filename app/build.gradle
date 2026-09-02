@@ -17,8 +17,10 @@ android {
         applicationId "com.otgruzka.tsd"
         minSdk 26
         targetSdk 36
-        versionCode 2
-        versionName "2.0"
+        // Бампать при КАЖДОМ релизе — иначе баннер обновления не сработает
+        // (version.json генерится из этих значений скриптом deploy_apk.sh)
+        versionCode 3
+        versionName "2.1"
     }
 
     buildFeatures {
