@@ -639,16 +639,35 @@ class InventoryCellActivity : AppCompatActivity() {
                 text = buildString {
                     append(l.sku ?: "")
                     if (l.is_foreign) append(" · не числился тут")
-                    if (l.qty_expected != null) append(" · по учёту ${l.qty_expected}")
                 }
                 textSize = 12f; setTextColor(MUTED)
             })
             card.addView(info)
+            // Счёт показываем как «факт / сколько должно быть» — оператору сразу
+            // видно, сколько ещё осталось найти. В слепом режиме учёт с сервера не
+            // приходит вовсе, тогда остаётся одно число.
+            val counted = n(l.qty_counted)
+            val expected = l.qty_expected?.let { n(it) }
             card.addView(TextView(this).apply {
-                text = fmtN(n(l.qty_counted))
-                textSize = 22f; setTypeface(null, Typeface.BOLD); setTextColor(GREEN)
-                setPadding(dp(10), 0, dp(6), 0)
+                text = fmtN(counted)
+                textSize = 22f; setTypeface(null, Typeface.BOLD)
+                setTextColor(
+                    when {
+                        expected == null -> GREEN
+                        counted == expected -> GREEN   // сошлось
+                        counted > expected -> ORANGE_TX // нашли больше, чем числится
+                        else -> TEXT                    // ещё не всё найдено
+                    }
+                )
+                setPadding(dp(10), 0, 0, 0)
             })
+            if (expected != null) {
+                card.addView(TextView(this).apply {
+                    text = "/${fmtN(expected)}"
+                    textSize = 15f; setTextColor(MUTED)
+                    setPadding(dp(1), dp(4), dp(6), 0)
+                })
+            }
             llContent.addView(card, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { bottomMargin = dp(8) })
@@ -661,7 +680,8 @@ class InventoryCellActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             background = rounded(GREEN, 14)
             setPadding(0, dp(15), 0, dp(15))
-            setOnClickListener { confirmComplete() }
+            // Без диалога подтверждения: нажал — завершилось (решение владельца)
+            setOnClickListener { complete() }
         }
         llBottom.addView(btn, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -686,20 +706,6 @@ class InventoryCellActivity : AppCompatActivity() {
             setOnClickListener { release() }
         })
         llBottom.addView(row)
-    }
-
-    private fun confirmComplete() {
-        val cur = session ?: return
-        val counted = cur.lines.orEmpty().count { it.counted }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Завершить ${cur.cell?.code ?: "ячейку"}?")
-            .setMessage(
-                "Посчитано позиций: $counted.\n\n" +
-                    "Всё, что числится в ячейке и не отсканировано, уйдёт в недостачу."
-            )
-            .setPositiveButton("Завершить") { _, _ -> complete() }
-            .setNegativeButton("Отмена", null)
-            .show()
     }
 
     private fun showMsg(text: String, bg: Int, fg: Int) {
