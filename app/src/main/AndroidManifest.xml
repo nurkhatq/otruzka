@@ -42,6 +42,11 @@
             android:exported="false" />
 
         <activity
+            android:name=".PutawayActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
+        <activity
             android:name=".InventoryCountsActivity"
             android:exported="false" />
 

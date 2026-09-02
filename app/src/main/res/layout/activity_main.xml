@@ -111,6 +111,18 @@
                 android:paddingBottom="10dp"/>
 
             <TextView
+                android:id="@+id/tvPutaway"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="Расклад."
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                android:paddingTop="6dp"
+                android:paddingBottom="10dp"/>
+
+            <TextView
                 android:id="@+id/tvHistory"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"

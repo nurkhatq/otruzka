@@ -114,6 +114,11 @@ class MainActivity : AppCompatActivity() {
             // inventory_count проверяет сервер
             startActivity(Intent(this, InventoryCountsActivity::class.java))
         }
+        findViewById<TextView>(R.id.tvPutaway).setOnClickListener {
+            // Раскладка отдельно от пересчёта: там считают, тут двигают товар —
+            // путать эти две работы на складе дорого
+            startActivity(Intent(this, PutawayActivity::class.java))
+        }
         findViewById<TextView>(R.id.tvHistory).setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
         }

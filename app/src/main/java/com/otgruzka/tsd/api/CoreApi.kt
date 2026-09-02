@@ -207,4 +207,18 @@ interface CoreApi {
         @Path("id") id: Int,
         @Body body: InvReleaseBody,
     ): Map<String, String>
+
+    // ─── Раскладка по ячейкам (/putaway) ─────────────────────────────────────
+
+    @POST("putaway/open")
+    suspend fun pwOpen(@Body body: PwOpenBody): PwOpenResponse
+
+    @POST("putaway/cells/{id}/scan")
+    suspend fun pwScan(@Path("id") id: Int, @Body body: PwScanBody): PwScanResponse
+
+    @POST("putaway/cells/{id}/undo")
+    suspend fun pwUndo(@Path("id") id: Int): PwScanResponse
+
+    @POST("putaway/cells/{id}/commit")
+    suspend fun pwCommit(@Path("id") id: Int): PwCommitResponse
 }
