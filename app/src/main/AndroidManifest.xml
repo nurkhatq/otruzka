@@ -42,18 +42,13 @@
             android:exported="false" />
 
         <activity
-            android:name=".InventoryActivity"
-            android:exported="false"
-            android:windowSoftInputMode="adjustResize|stateHidden" />
-
-        <activity
-            android:name=".InvHistoryActivity"
+            android:name=".InventoryCountsActivity"
             android:exported="false" />
 
         <activity
-            android:name=".WmsLoginActivity"
+            android:name=".InventoryCellActivity"
             android:exported="false"
-            android:windowSoftInputMode="adjustResize" />
+            android:windowSoftInputMode="adjustResize|stateHidden" />
 
         <activity
             android:name=".PickerTasksActivity"

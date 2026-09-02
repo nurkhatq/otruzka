@@ -163,4 +163,48 @@ interface CoreApi {
 
     @GET("tsd/returns/{id}")
     suspend fun returnsGet(@Path("id") id: Int): ReturnReceiving
+
+    // ─── Инвентаризация (/inventory) ─────────────────────────────────────────
+
+    @GET("inventory/counts")
+    suspend fun invCounts(@Query("status") status: String? = "OPEN"): List<InvCount>
+
+    @GET("inventory/active")
+    suspend fun invActive(): InvActive
+
+    @GET("inventory/counts/{id}/cells")
+    suspend fun invBoard(
+        @Path("id") id: Int,
+        @Query("status") status: String? = null,
+    ): List<InvBoardRow>
+
+    @POST("inventory/cells/claim")
+    suspend fun invClaim(@Body body: InvClaimBody): InvClaimResponse
+
+    @GET("inventory/cells/{id}")
+    suspend fun invCell(@Path("id") id: Int): InvSession
+
+    @POST("inventory/cells/{id}/scan")
+    suspend fun invScan(@Path("id") id: Int, @Body body: InvScanBody): InvScanResponse
+
+    @POST("inventory/cells/{id}/set-qty")
+    suspend fun invSetQty(@Path("id") id: Int, @Body body: InvSetQtyBody): InvScanResponse
+
+    @POST("inventory/cells/{id}/undo")
+    suspend fun invUndo(@Path("id") id: Int): InvScanResponse
+
+    @POST("inventory/cells/{id}/heartbeat")
+    suspend fun invHeartbeat(@Path("id") id: Int): Map<String, Any>
+
+    @POST("inventory/cells/{id}/complete")
+    suspend fun invComplete(
+        @Path("id") id: Int,
+        @Body body: InvCompleteBody,
+    ): InvCompleteResponse
+
+    @POST("inventory/cells/{id}/release")
+    suspend fun invRelease(
+        @Path("id") id: Int,
+        @Body body: InvReleaseBody,
+    ): Map<String, String>
 }

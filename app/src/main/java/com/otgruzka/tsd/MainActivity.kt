@@ -110,10 +110,9 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, ReturnsActivity::class.java))
         }
         findViewById<TextView>(R.id.tvInventory).setOnClickListener {
-            // Инвентаризация пока живёт на старом складе — вход отдельный
-            val target = if (WmsAuth.isLoggedIn(this))
-                InventoryActivity::class.java else WmsLoginActivity::class.java
-            startActivity(Intent(this, target))
+            // Инвентаризация переехала в ядро (/inventory): один логин, права
+            // inventory_count проверяет сервер
+            startActivity(Intent(this, InventoryCountsActivity::class.java))
         }
         findViewById<TextView>(R.id.tvHistory).setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
