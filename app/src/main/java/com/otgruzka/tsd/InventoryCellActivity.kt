@@ -292,13 +292,18 @@ class InventoryCellActivity : AppCompatActivity() {
                         device_id = Build.MODEL,
                     )
                 )
+                // Любой исход, кроме OK, означает «ячейки у меня нет»: экран надо
+                // перерисовать, иначе после завершения одной ячейки и неудачного
+                // перехода на занятую человек продолжает видеть старый список и
+                // думает, что всё ещё считает её.
+                if (res.result != "OK") render()
                 when (res.result) {
                     "OK" -> {
                         session = res.session
                         countId = res.session?.count_id ?: countId
                         Beep.ok()
-                        if (res.resumed) showMsg("Продолжаем ячейку", GREEN_BG, GREEN_TX)
                         render()
+                        if (res.resumed) showMsg("Продолжаем ячейку", GREEN_BG, GREEN_TX)
                     }
                     "LOCKED" -> {
                         Beep.error()
@@ -359,6 +364,9 @@ class InventoryCellActivity : AppCompatActivity() {
                 )
                 session = res.session ?: session
                 pendingCode = null
+                // Список рисуем ДО плашки: showMsg занимает то же место, и вызов
+                // render() после него стирал бы сообщение в тот же кадр.
+                render()
                 when (res.result) {
                     "OK" -> {
                         if (res.warn?.code == "FOREIGN") {
@@ -384,7 +392,6 @@ class InventoryCellActivity : AppCompatActivity() {
                     }
                     "DUPLICATE" -> Beep.warn()
                 }
-                render()
             } catch (e: Exception) {
                 Beep.error()
                 showMsg("Ошибка: ${e.message?.take(60)}", RED_BG, RED_TX)
@@ -424,10 +431,10 @@ class InventoryCellActivity : AppCompatActivity() {
             try {
                 val res = api.invUndo(cur.count_cell_id)
                 session = res.session ?: session
+                render()
                 if (res.result == "NOTHING") {
                     Beep.warn(); showMsg("Откатывать нечего", ORANGE_BG, ORANGE_TX)
                 } else Beep.ok()
-                render()
             } catch (e: Exception) {
                 Beep.error()
                 showMsg("Ошибка: ${e.message?.take(60)}", RED_BG, RED_TX)
@@ -577,12 +584,15 @@ class InventoryCellActivity : AppCompatActivity() {
 
         tvTitle.text = cur.cell?.code ?: "Ячейка"
         tvChip.visibility = View.VISIBLE
-        if (cur.blind) {
+        // Бейдж показывает то, что человек РЕАЛЬНО видит на этом экране: в слепой
+        // кампании проводящему учёт отдаётся, и «СЛЕПОЙ» рядом с видимым
+        // остатком был бы обманом.
+        if (cur.blind_for_me) {
             tvChip.text = "СЛЕПОЙ"
             tvChip.background = rounded(Color.parseColor("#E0E7FF"), 8)
             tvChip.setTextColor(Color.parseColor("#3730A3"))
         } else {
-            tvChip.text = "ОТКРЫТЫЙ"
+            tvChip.text = if (cur.blind) "УЧЁТ ВИДЕН" else "ОТКРЫТЫЙ"
             tvChip.background = rounded(Color.parseColor("#DCFCE7"), 8)
             tvChip.setTextColor(GREEN_TX)
         }

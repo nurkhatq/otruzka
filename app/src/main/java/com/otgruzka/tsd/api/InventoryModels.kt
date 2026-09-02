@@ -59,6 +59,8 @@ data class InvSession(
     val count_id: Int,
     val number: String?,
     val blind: Boolean,
+    /** Скрыт ли учёт именно от меня: проводящий видит его и в слепой кампании. */
+    val blind_for_me: Boolean = false,
     val status: String,
     val mode: String?,
     val username: String?,
