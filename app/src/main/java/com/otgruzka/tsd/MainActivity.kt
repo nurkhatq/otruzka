@@ -230,7 +230,9 @@ class MainActivity : AppCompatActivity() {
     private fun initSession() {
         val name = CoreAuth.fullName(this) ?: CoreAuth.username(this) ?: ""
         val city = CoreAuth.cityLabel(CoreAuth.city(this))
-        tvUser.text = "$name  ·  $city"
+        // Версия рядом с именем: после обновления по кнопке надо уметь пройти по
+        // складу и глазами убедиться, что на всех ТСД одно и то же
+        tvUser.text = "$name  ·  $city  ·  v${BuildConfig.VERSION_NAME}"
         tvSession.text = "Подключение…"
         lifecycleScope.launch {
             try {
