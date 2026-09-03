@@ -40,6 +40,8 @@ data class PwScanBody(
     val qty: String = "1",
     val product_id: Long? = null,
     val client_ref: String? = null,
+    /** Закупочная цена с терминала — если товара в системе нет вообще. */
+    val unit_cost: String? = null,
 )
 
 /** result: OK | UNKNOWN | AMBIGUOUS | DUPLICATE | NO_COST | NOTHING */
