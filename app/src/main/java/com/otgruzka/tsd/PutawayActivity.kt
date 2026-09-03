@@ -242,7 +242,7 @@ class PutawayActivity : AppCompatActivity() {
         }
     }
 
-    private fun scanItem(code: String, productId: Long?, qty: String, unitCost: String? = null) {
+    private fun scanItem(code: String, productId: Long?, qty: String) {
         val cell = state?.cell ?: return
         if (busy) return
         busy = true
@@ -250,7 +250,7 @@ class PutawayActivity : AppCompatActivity() {
             try {
                 val res = api.pwScan(
                     cell.id,
-                    PwScanBody(code, qty, productId, UUID.randomUUID().toString(), unitCost),
+                    PwScanBody(code, qty, productId, UUID.randomUUID().toString()),
                 )
                 state = res.state ?: state
                 pendingCode = null
@@ -279,12 +279,6 @@ class PutawayActivity : AppCompatActivity() {
                             "Товар не найден в каталоге. Отложите и позовите менеджера",
                             RED_BG, RED_TX,
                         )
-                    }
-                    "NO_COST" -> {
-                        // Товара нет в системе вообще — но он в руках у человека.
-                        // Спрашиваем закупочную цену, а не отказываем.
-                        Beep.warn()
-                        askPrice(code, productId, qty)
                     }
                     "DUPLICATE" -> Beep.warn()
                 }
@@ -355,27 +349,6 @@ class PutawayActivity : AppCompatActivity() {
             .setTitle("Какой это товар?")
             .setItems(candidates.map { it.second }.toTypedArray()) { _, i ->
                 scanItem(code, candidates[i].first, qty)
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
-
-    private fun askPrice(code: String, productId: Long?, qty: String) {
-        val input = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            hint = "цена за штуку, ₸"
-        }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Новый товар на складе")
-            .setMessage(
-                "Этого товара в системе нет. Укажите закупочную цену за штуку — " +
-                    "без неё он ляжет на склад по нулю и продастся себе в убыток."
-            )
-            .setView(input)
-            .setPositiveButton("Положить") { _, _ ->
-                val v = input.text.toString().trim()
-                if (v.isNotEmpty()) scanItem(code, productId, qty, v)
-                else showMsg("Без цены положить нельзя", ORANGE_BG, ORANGE_TX)
             }
             .setNegativeButton("Отмена", null)
             .show()
