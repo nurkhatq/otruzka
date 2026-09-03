@@ -256,7 +256,17 @@ class PutawayActivity : AppCompatActivity() {
                 pendingCode = null
                 render()
                 when (res.result) {
-                    "OK" -> Beep.ok()
+                    "OK" -> {
+                        val over = res.surplus?.toDoubleOrNull() ?: 0.0
+                        if (over > 0) {
+                            // Нашли больше, чем числится — кладём и приходуем
+                            Beep.warn()
+                            showMsg(
+                                "Сверх учёта: ${fmtN(over)} шт — оформлю излишком",
+                                ORANGE_BG, ORANGE_TX,
+                            )
+                        } else Beep.ok()
+                    }
                     "AMBIGUOUS" -> {
                         Beep.warn()
                         askCandidate(code, res.candidates.orEmpty().map {
@@ -270,11 +280,11 @@ class PutawayActivity : AppCompatActivity() {
                             RED_BG, RED_TX,
                         )
                     }
-                    "NO_STOCK" -> {
+                    "NO_COST" -> {
                         Beep.error()
                         showMsg(
-                            "На складе столько нет — свободно ${res.available ?: "0"}. " +
-                                "Если товар пришёл, оформите приёмку",
+                            "Это излишек, но у товара неизвестна закупочная цена. " +
+                                "Проставьте её в карточке — иначе он ляжет на склад по нулю",
                             RED_BG, RED_TX,
                         )
                     }
@@ -324,9 +334,13 @@ class PutawayActivity : AppCompatActivity() {
                 state = null
                 pendingCode = null
                 render()
+                val over = res.surplus_qty?.toDoubleOrNull() ?: 0.0
                 toast(
-                    "Разложено: ${res.moved_qty ?: "0"} шт" +
-                        (res.document_number?.let { " · $it" } ?: "")
+                    buildString {
+                        append("Разложено: ${res.moved_qty ?: "0"} шт")
+                        res.document_number?.let { append(" · $it") }
+                        if (over > 0) append("\nИзлишек: ${fmtN(over)} шт · ${res.surplus_document_number}")
+                    }
                 )
             } catch (e: Exception) {
                 Beep.error()

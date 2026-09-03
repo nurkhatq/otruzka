@@ -19,8 +19,8 @@ android {
         targetSdk 36
         // Бампать при КАЖДОМ релизе — иначе баннер обновления не сработает
         // (version.json генерится из этих значений скриптом deploy_apk.sh)
-        versionCode 7
-        versionName "2.5"
+        versionCode 8
+        versionName "2.6"
     }
 
     buildFeatures {

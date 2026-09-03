@@ -42,12 +42,14 @@ data class PwScanBody(
     val client_ref: String? = null,
 )
 
-/** result: OK | UNKNOWN | AMBIGUOUS | DUPLICATE | NO_STOCK | NOTHING */
+/** result: OK | UNKNOWN | AMBIGUOUS | DUPLICATE | NO_COST | NOTHING */
 data class PwScanResponse(
     val result: String,
     val product_id: Long? = null,
     val candidates: List<InvCandidate>? = null,
     val available: String? = null,
+    /** Сколько из этого скана легло СВЕРХ учёта — уйдёт оприходованием. */
+    val surplus: String? = null,
     val state: PwState?,
 )
 
@@ -56,4 +58,7 @@ data class PwCommitResponse(
     val document_number: String?,
     val moved_positions: Int = 0,
     val moved_qty: String?,
+    /** Излишек уходит отдельным документом оприходования. */
+    val surplus_document_number: String? = null,
+    val surplus_qty: String? = null,
 )
