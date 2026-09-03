@@ -31,7 +31,12 @@ object AppUpdater {
 
     private const val VERSION_URL = "https://qoimams.asia/apk/version.json"
     private const val PREFS = "app_updater"
-    private const val CHECK_INTERVAL_MS = 60 * 60 * 1000L  // не чаще раза в час
+    // Проверяем практически при каждом входе в приложение. Час, стоявший здесь
+    // раньше, означал вот что: терминал спросил сервер за минуту до выкладки,
+    // запомнил «обновлений нет» — и следующий час баннер не показывал, сколько
+    // ни перезаходи. Запрос весит 149 байт, экономить на нём было не на чем.
+    // Пары минут достаточно, чтобы не долбить сервер при частых сворачиваниях.
+    private const val CHECK_INTERVAL_MS = 2 * 60 * 1000L
     private const val APK_FILENAME = "otgruzka-update.apk"
 
     data class Info(

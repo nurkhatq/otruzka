@@ -156,9 +156,15 @@ class MainActivity : AppCompatActivity() {
     private var updateBanner: TextView? = null
     private var updateInfo: AppUpdater.Info? = null
 
-    private fun checkForUpdate() {
+    private fun checkForUpdate(force: Boolean = false) {
         lifecycleScope.launch {
-            val info = AppUpdater.check(this@MainActivity) ?: return@launch
+            val info = AppUpdater.check(this@MainActivity, force)
+            if (info == null) {
+                // Молчим сами по себе, но на РУЧНУЮ проверку обязаны ответить —
+                // иначе человек тычет в версию и не понимает, работает ли она
+                if (force) toast("Обновлений нет · v${BuildConfig.VERSION_NAME}")
+                return@launch
+            }
             updateInfo = info
             showUpdateBanner("Доступно обновление v${info.version_name ?: info.version_code} — нажмите, чтобы установить")
         }
@@ -233,6 +239,9 @@ class MainActivity : AppCompatActivity() {
         // Версия рядом с именем: после обновления по кнопке надо уметь пройти по
         // складу и глазами убедиться, что на всех ТСД одно и то же
         tvUser.text = "$name  ·  $city  ·  v${BuildConfig.VERSION_NAME}"
+        // Тап по версии = проверить обновление прямо сейчас: на складе нужен
+        // способ дожать терминал, а не ждать, пока он сам соберётся
+        tvUser.setOnClickListener { checkForUpdate(force = true) }
         tvSession.text = "Подключение…"
         lifecycleScope.launch {
             try {
