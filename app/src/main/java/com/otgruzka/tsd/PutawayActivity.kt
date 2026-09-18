@@ -35,6 +35,15 @@ import java.util.UUID
  * Почему это не инвентаризация: пересчёт приводит остаток ячейки к
  * посчитанному, то есть оприходовал бы товар излишком из воздуха, а в общей
  * «ДХ» он остался бы числиться. Раскладка ничего не создаёт — только переносит.
+ *
+ * Режим «ИЗ ЯЧЕЙКИ В ЯЧЕЙКУ» (переключатель на стартовом экране): сначала скан
+ * ячейки ОТКУДА, потом КУДА, дальше товар. Товар берётся только из указанной
+ * ячейки — нужно, когда хранение разбито на ячейки и когда перекладывают с
+ * полки МХ на полку МХ: без источника ядро возьмёт товар по своему приоритету
+ * (сначала общая «ДХ») и освобождаемая ячейка останется нетронутой.
+ *
+ * Обратного хода нет: товар с полок МХ в хранение не возвращается — ядро такой
+ * скан отбивает (IN_PICKING / SOURCE_BAD_ZONE), экран объясняет, почему.
  */
 class PutawayActivity : AppCompatActivity() {
 
@@ -57,6 +66,11 @@ class PutawayActivity : AppCompatActivity() {
     private var busy = false
     private var countByPick = true
     private var pendingCode: String? = null
+    // Режим «из ячейки в ячейку»: первый скан полки = откуда, второй = куда.
+    private var byCellMode = false
+    // ШК источника держим у себя: проверить его ядро может только вместе с
+    // целью (склад, зона, «не та же ячейка»), а цель сканируется второй.
+    private var sourceBarcode: String? = null
 
     private val barcodeBuf = StringBuilder()
 
@@ -206,6 +220,15 @@ class PutawayActivity : AppCompatActivity() {
         val code = raw.trim()
         if (code.isEmpty()) return
         if (state == null || code.startsWith("CELL-", ignoreCase = true)) {
+            // В режиме «из ячейки в ячейку» первая отсканированная полка —
+            // это ОТКУДА. Проверить её ядро сможет только вместе с целью,
+            // поэтому пока просто запоминаем и ждём вторую.
+            if (byCellMode && sourceBarcode == null) {
+                sourceBarcode = code
+                Beep.ok()
+                render()
+                return
+            }
             openCell(code)
             return
         }
@@ -220,7 +243,9 @@ class PutawayActivity : AppCompatActivity() {
         busy = true
         lifecycleScope.launch {
             try {
-                val res = api.pwOpen(PwOpenBody(barcode = barcode))
+                val res = api.pwOpen(
+                    PwOpenBody(barcode = barcode, source_barcode = sourceBarcode)
+                )
                 if (res.result == "OK") {
                     state = res.state
                     Beep.ok()
@@ -230,8 +255,11 @@ class PutawayActivity : AppCompatActivity() {
                     }
                 } else {
                     Beep.error()
+                    // Отказ по источнику — сбрасываем именно его, цель человек
+                    // сканирует заново вместе с правильной ячейкой «откуда».
+                    if (res.result != "UNKNOWN_CELL") sourceBarcode = null
                     render()
-                    showMsg("Ячейка не найдена — это точно её штрихкод?", RED_BG, RED_TX)
+                    showMsg(cellRefusal(res.result), RED_BG, RED_TX)
                 }
             } catch (e: Exception) {
                 Beep.error()
@@ -242,6 +270,17 @@ class PutawayActivity : AppCompatActivity() {
         }
     }
 
+    /** Человеческий текст на отказ ядра — вместо «ошибки сети». */
+    private fun cellRefusal(result: String): String = when (result) {
+        "UNKNOWN_SOURCE" -> "Ячейку «откуда» не нашёл — это точно её штрихкод?"
+        "SOURCE_IS_TARGET" -> "Это та же ячейка, куда кладём. Отсканируй другую"
+        "SOURCE_OTHER_WAREHOUSE" -> "Ячейка «откуда» с другого склада"
+        "SOURCE_BAD_ZONE" ->
+            "Из этой ячейки сюда брать нельзя.\n\nС полки МХ товар в хранение " +
+                "не возвращаем; брак, возвраты и товар в пути раскладкой не трогаем"
+        else -> "Ячейка не найдена — это точно её штрихкод?"
+    }
+
     private fun scanItem(code: String, productId: Long?, qty: String) {
         val cell = state?.cell ?: return
         if (busy) return
@@ -250,7 +289,10 @@ class PutawayActivity : AppCompatActivity() {
             try {
                 val res = api.pwScan(
                     cell.id,
-                    PwScanBody(code, qty, productId, UUID.randomUUID().toString()),
+                    PwScanBody(
+                        code, qty, productId, UUID.randomUUID().toString(),
+                        source_cell_id = state?.source?.id,
+                    ),
                 )
                 state = res.state ?: state
                 pendingCode = null
@@ -258,6 +300,7 @@ class PutawayActivity : AppCompatActivity() {
                 when (res.result) {
                     "OK" -> {
                         val over = res.surplus?.toDoubleOrNull() ?: 0.0
+                        val left = res.in_source?.toDoubleOrNull()
                         if (over > 0) {
                             // Нашли больше, чем числится — кладём и приходуем
                             Beep.warn()
@@ -265,7 +308,32 @@ class PutawayActivity : AppCompatActivity() {
                                 "Сверх учёта: ${fmtN(over)} шт — оформлю излишком",
                                 ORANGE_BG, ORANGE_TX,
                             )
+                        } else if (left != null && left <= 0) {
+                            // Ячейку «откуда» выгребли досуха: дальше пойдёт
+                            // сверх учёта, и человек должен узнать это сразу.
+                            Beep.warn()
+                            showMsg(
+                                "В ячейке ${state?.source?.code ?: "«откуда»"} по учёту " +
+                                    "больше ничего нет",
+                                ORANGE_BG, ORANGE_TX,
+                            )
                         } else Beep.ok()
+                    }
+                    "IN_PICKING" -> {
+                        // Обратного хода нет: с полки МХ товар в хранение не
+                        // возвращаем. Скан НЕ записан — работа не испорчена.
+                        Beep.error()
+                        val onShelf = res.available?.toDoubleOrNull() ?: 0.0
+                        showMsg(
+                            "Этот товар лежит на полке МХ (${fmtN(onShelf)} шт).\n\n" +
+                                "С полки в хранение не возвращаем — скан не записан",
+                            RED_BG, RED_TX,
+                        )
+                    }
+                    "UNKNOWN_SOURCE", "SOURCE_IS_TARGET",
+                    "SOURCE_OTHER_WAREHOUSE", "SOURCE_BAD_ZONE" -> {
+                        Beep.error()
+                        showMsg(cellRefusal(res.result), RED_BG, RED_TX)
                     }
                     "AMBIGUOUS" -> {
                         Beep.warn()
@@ -325,7 +393,7 @@ class PutawayActivity : AppCompatActivity() {
                 Beep.ok()
                 state = null
                 pendingCode = null
-                render()
+                render()   // источник (sourceBarcode) остаётся — следующая полка
                 val over = res.surplus_qty?.toDoubleOrNull() ?: 0.0
                 toast(
                     buildString {
@@ -377,15 +445,47 @@ class PutawayActivity : AppCompatActivity() {
         llBottom.removeAllViews()
 
         if (st?.cell == null) {
-            tvTitle.text = "Сканируй ячейку"
-            tvSubtitle.text = "Куда кладём товар"
+            val waitingTarget = byCellMode && sourceBarcode != null
+            tvTitle.text = if (waitingTarget) "Сканируй ячейку КУДА" else "Сканируй ячейку"
+            tvSubtitle.text = when {
+                waitingTarget -> "откуда: $sourceBarcode"
+                byCellMode -> "Сначала ячейка, ОТКУДА берём"
+                else -> "Куда кладём товар"
+            }
             tvTotals.text = ""
             tvMode.text = ""
             llContent.addView(TextView(this).apply {
-                text = "Полка не выбрана.\n\nОтсканируй штрихкод полки, потом товар — " +
-                    "он переедет сюда вместе со своей себестоимостью."
+                text = when {
+                    waitingTarget ->
+                        "Ячейка «откуда» принята.\n\nТеперь отсканируй полку, куда кладём."
+                    byCellMode ->
+                        "Режим «из ячейки в ячейку».\n\nСканируй ячейку ОТКУДА, потом " +
+                            "КУДА, потом товар — он поедет только из указанной ячейки."
+                    else ->
+                        "Полка не выбрана.\n\nОтсканируй штрихкод полки, потом товар — " +
+                            "он переедет сюда вместе со своей себестоимостью."
+                }
                 textSize = 14f; setTextColor(MUTED)
             })
+            // Переключатель режима: обычная раскладка ядро ищет товар само
+            // (сначала общая «ДХ»), режим «из ячейки в ячейку» берёт только из
+            // указанной — им перекладывают хранение и полки МХ между собой.
+            llBottom.addView(TextView(this).apply {
+                text = if (byCellMode) "Режим: ИЗ ЯЧЕЙКИ В ЯЧЕЙКУ — обычная раскладка"
+                    else "Режим: обычная раскладка — переключить на «из ячейки в ячейку»"
+                textSize = 14f; setTypeface(null, Typeface.BOLD)
+                gravity = Gravity.CENTER
+                setTextColor(if (byCellMode) Color.WHITE else BLUE)
+                background = if (byCellMode) rounded(BLUE, 14) else rounded(BLUE_BG, 14)
+                setPadding(0, dp(13), 0, dp(13))
+                setOnClickListener {
+                    byCellMode = !byCellMode
+                    sourceBarcode = null
+                    render()
+                }
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
             return
         }
 
@@ -395,9 +495,11 @@ class PutawayActivity : AppCompatActivity() {
             "defect" -> "Брак"
             else -> st.cell.zone ?: ""
         }
-        tvTitle.text = st.cell.code
+        tvTitle.text =
+            if (st.source != null) "${st.source.code} → ${st.cell.code}" else st.cell.code
         tvSubtitle.text = buildString {
             append("зона $zone")
+            st.source?.let { append(" · берём из ${it.code}") }
             st.counting_by?.let { append(" · считает $it") }
         }
         val pending = st.pending.orEmpty()
@@ -430,7 +532,13 @@ class PutawayActivity : AppCompatActivity() {
                 textSize = 15f; setTypeface(null, Typeface.BOLD); setTextColor(TEXT)
             })
             info.addView(TextView(this).apply {
-                text = r.sku ?: ""
+                text = buildString {
+                    append(r.sku ?: "")
+                    r.source_cell_code?.let {
+                        if (isNotEmpty()) append(" · ")
+                        append("из $it")
+                    }
+                }
                 textSize = 12f; setTextColor(MUTED)
             })
             card.addView(info)
@@ -487,7 +595,10 @@ class PutawayActivity : AppCompatActivity() {
             setOnClickListener { undo() }
         })
         row.addView(TextView(this).apply {
-            text = "Другая полка"
+            // Ячейку «откуда» держим: из одной ячейки обычно раскладывают
+            // сразу по нескольким полкам, пересканировать её каждый раз — зря.
+            text = if (st.source != null) "Другая полка (откуда: ${st.source.code})"
+                else "Другая полка"
             textSize = 13f; setTextColor(FAINT)
             gravity = Gravity.END
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -497,6 +608,12 @@ class PutawayActivity : AppCompatActivity() {
                     Beep.warn()
                     showMsg("Сначала «Готово» — иначе набранное потеряется", ORANGE_BG, ORANGE_TX)
                 } else { state = null; render() }
+            }
+            setOnLongClickListener {
+                // Долгий тап — сменить и ячейку «откуда» (или выйти из режима).
+                state = null; sourceBarcode = null; render()
+                Beep.ok()
+                true
             }
         })
         llBottom.addView(row)
