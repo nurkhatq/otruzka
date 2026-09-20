@@ -42,6 +42,9 @@ data class PickerOrderItem(
     val name: String?,
     val quantity: Int?,
     val expected_barcode: String?,
+    // Все коды товара: один товар приезжает в разных упаковках, и у карточки
+    // честно заведено несколько ШК. Сервер отдаёт список с 15.09.2026.
+    val expected_barcodes: List<String>? = null,
     val is_kit: Boolean?,
     val components: List<KitComponent>?,
     val images: List<String>?,
@@ -57,6 +60,7 @@ data class PickerTask(
     val offer_code: String?,
     val product_name: String?,
     val expected_barcode: String?,
+    val expected_barcodes: List<String>? = null,
     val orders: List<PickerOrderItem>?,
     val total_orders: Int,
     val total_qty: Int?,

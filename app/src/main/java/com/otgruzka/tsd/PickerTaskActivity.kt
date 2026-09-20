@@ -346,14 +346,29 @@ class PickerTaskActivity : AppCompatActivity() {
 
     private fun handleScanBulk(code: String) {
         val t = task ?: return
-        val expected = t.expected_barcode
-        if (expected != null && code != expected) {
+        if (!matchesExpected(t, code)) {
             bulkWrong = code
             Beep.error()
             render()
             return
         }
         startBulkEntry(code)
+    }
+
+    /**
+     * Скан совпал с товаром задания.
+     *
+     * Сверяем по ВСЕМ кодам карточки (`expected_barcodes`), а не по одному:
+     * товар приезжает в разных упаковках, и на втором коде экран отбивал верный
+     * скан «Неверный штрихкод». Сервер и так сравнивает товары, а не строки, —
+     * локальная проверка нужна лишь чтобы не гонять заведомо чужой скан.
+     * Список пуст (старый сервер, товар без карточки) — работаем как раньше.
+     */
+    private fun matchesExpected(t: PickerTask, code: String): Boolean {
+        val codes = t.expected_barcodes?.filter { it.isNotBlank() }.orEmpty()
+        if (codes.isNotEmpty()) return codes.any { it == code }
+        val expected = t.expected_barcode
+        return expected == null || code == expected
     }
 
     private fun startBulkEntry(code: String) {
