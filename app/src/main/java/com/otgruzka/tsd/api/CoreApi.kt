@@ -221,4 +221,24 @@ interface CoreApi {
 
     @POST("putaway/cells/{id}/commit")
     suspend fun pwCommit(@Path("id") id: Int): PwCommitResponse
+
+    // ─── Фулфилмент: приёмка коробками (/ff) ─────────────────────────────────
+
+    @GET("ff/supplies")
+    suspend fun ffSupplies(@Query("status") status: String = "open"): List<FfSupply>
+
+    @GET("ff/supplies/{id}")
+    suspend fun ffSupply(@Path("id") id: Long): FfSupplyDetail
+
+    @POST("ff/supplies/{id}/scan")
+    suspend fun ffScan(@Path("id") id: Long, @Body body: FfScanBody): FfScanResponse
+
+    @POST("ff/supplies/{id}/entries")
+    suspend fun ffAddEntry(@Path("id") id: Long, @Body body: FfEntryBody): FfEntryResponse
+
+    @POST("ff/entries/{id}/cancel")
+    suspend fun ffCancelEntry(@Path("id") id: Long): FfCancelResponse
+
+    @POST("ff/supplies/{id}/close")
+    suspend fun ffClose(@Path("id") id: Long): FfSupplyDetail
 }

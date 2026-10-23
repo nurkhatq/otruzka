@@ -48,7 +48,7 @@
                 android:paddingLeft="8dp"/>
         </LinearLayout>
 
-<!-- Шесть ссылок в два ряда по три — в один ряд на узком ТСД не влезают -->
+<!-- Восемь ссылок в два ряда по четыре — в один ряд на узком ТСД не влезают -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -86,6 +86,19 @@
                 android:layout_weight="1"
                 android:gravity="center"
                 android:text="Приёмка"
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                android:paddingTop="10dp"
+                android:paddingBottom="6dp"/>
+
+            <!-- Фулфилмент: приёмка товара клиента коробками с этикетками -->
+            <TextView
+                android:id="@+id/tvFfBoxes"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="Коробки"
                 android:textSize="13sp"
                 android:textColor="@color/primary"
                 android:paddingTop="10dp"

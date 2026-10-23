@@ -119,6 +119,11 @@ class MainActivity : AppCompatActivity() {
             // путать эти две работы на складе дорого
             startActivity(Intent(this, PutawayActivity::class.java))
         }
+        findViewById<TextView>(R.id.tvFfBoxes).setOnClickListener {
+            // Фулфилмент: товар клиента принимаем коробками, этикетки печатаются
+            // сами; право receipt проверяет сервер
+            startActivity(Intent(this, FfReceiveActivity::class.java))
+        }
         findViewById<TextView>(R.id.tvHistory).setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
         }
