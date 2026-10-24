@@ -38,9 +38,11 @@ import java.util.UUID
  * Фулфилмент: приёмка товара клиента коробками.
  *
  * Сначала — список открытых поставок (их заводит менеджер на сайте: Склад →
- * Фулфилмент). В поставке: скан товара → штук в коробке и сколько коробок →
- * «ПЕЧАТЬ». Ядро заводит коробки, приходует товар на склад клиента и ставит
- * этикетки в очередь принт-станции — они выходят сами, как накладные сборки.
+ * Фулфилмент). В поставке: скан товара → штук в коробке и сколько коробок уже
+ * подставлены из плана (коробки «исходят из поставки»: полные, потом одна
+ * неполная на остаток) → сверить с коробками → «ПЕЧАТЬ». Ядро заводит коробки,
+ * приходует товар на склад клиента и ставит этикетки в очередь принт-станции —
+ * они выходят сами, как накладные сборки.
  * На каждой этикетке свой номер коробки (K000123): скан этикетки показывает,
  * чья коробка и сколько в ней.
  *
@@ -213,6 +215,23 @@ class FfReceiveActivity : AppCompatActivity() {
         if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
     private fun fmtS(s: String?): String = fmtN(n(s))
 
+    /** Как план ложится в коробки: «10 × 48 + 1 × 20» (так же считает ядро). */
+    private fun boxPlan(qty: String?, perBox: String?): String? {
+        val q = n(qty).toLong()
+        val per = n(perBox).toLong()
+        if (q <= 0 || per <= 0) return null
+        val full = q / per
+        val rest = q - full * per
+        return listOfNotNull(
+            if (full > 0) "$full × $per" else null,
+            if (rest > 0) "1 × $rest" else null,
+        ).joinToString(" + ")
+    }
+
+    /** «5 из 11 кор.» — когда коробки известны по плану, иначе «5 кор.». */
+    private fun boxesOf(got: Int, planned: Int?): String =
+        if (planned != null) "$got из $planned кор." else "$got кор."
+
     /** Текст отказа ядра (`detail`), а не «HTTP 409». */
     private fun errText(e: Exception): String {
         if (e is HttpException) {
@@ -336,16 +355,30 @@ class FfReceiveActivity : AppCompatActivity() {
             text = p.name
             textSize = 16f; setTypeface(null, Typeface.BOLD); setTextColor(TEXT)
         })
+        val plan = boxPlan(p.expected, p.per_box_plan)
         box.addView(TextView(this).apply {
             text = if (p.expected == null) {
                 "Этого товара НЕТ в поставке — принять можно, в акте будет расхождение"
             } else {
-                "По плану ${fmtS(p.expected)} шт, принято ${fmtS(p.received)} шт (${p.boxes} кор.)"
+                "По плану ${fmtS(p.expected)} шт${plan?.let { " = $it" } ?: ""}\n" +
+                    "принято ${fmtS(p.received)} шт, ${boxesOf(p.boxes, p.boxes_expected)}"
             }
             textSize = 13f
             setTextColor(if (p.expected == null) ORANGE_TX else MUTED)
             setPadding(0, dp(4), 0, dp(10))
         })
+        // Подсказка — пока по плану есть что принимать (сверх плана считает кладовщик).
+        if (p.expected != null && n(p.expected) > n(p.received) &&
+            p.suggested_boxes != null && p.suggested_per_box != null
+        ) {
+            box.addView(TextView(this).apply {
+                // штук в коробке не из плана (прошлый ввод / карточка) — «из поставки» не пишем
+                text = if (p.per_box_plan != null) "Цифры — из поставки. Сверьте с коробками и нажмите «ПЕЧАТЬ»"
+                    else "Сверьте цифры с коробками и нажмите «ПЕЧАТЬ»"
+                textSize = 12f; setTextColor(BLUE)
+                setPadding(0, 0, 0, dp(8))
+            })
+        }
         fun field(label: String, value: String): EditText {
             box.addView(TextView(this).apply {
                 text = label; textSize = 13f; setTextColor(MUTED)
@@ -359,8 +392,10 @@ class FfReceiveActivity : AppCompatActivity() {
             box.addView(et)
             return et
         }
-        val etPer = field("Штук в коробке", p.suggested_per_box?.let { fmtS(it) } ?: "")
-        val etBoxes = field("Сколько коробок", "1")
+        val suggestedPer = p.suggested_per_box?.let { fmtS(it) } ?: ""
+        val suggestedBoxes = (p.suggested_boxes ?: 1).toString()
+        val etPer = field("Штук в коробке", suggestedPer)
+        val etBoxes = field("Сколько коробок", suggestedBoxes)
         val tvTotal = TextView(this).apply {
             textSize = 16f; setTypeface(null, Typeface.BOLD); setTextColor(GREEN)
             setPadding(0, dp(6), 0, dp(4))
@@ -391,7 +426,10 @@ class FfReceiveActivity : AppCompatActivity() {
                     showMsg("Укажите штук в коробке и сколько коробок — числа больше нуля", RED_BG, RED_TX)
                     return@setPositiveButton
                 }
-                if (cnt > 30) {
+                // Переспрос ловит опечатку (300 вместо 30). Цифры из поставки
+                // не трогали — опечатки нет, этикетки сверят с коробками.
+                val untouched = per.toString() == suggestedPer && cnt.toString() == suggestedBoxes
+                if (cnt > 30 && !untouched) {
                     show(android.app.AlertDialog.Builder(this)
                         .setTitle("Точно $cnt коробок?")
                         .setMessage("Будет напечатано $cnt этикеток по $per шт — всего ${per * cnt} шт.")
@@ -504,7 +542,7 @@ class FfReceiveActivity : AppCompatActivity() {
             .setTitle("Завершить приёмку ${s.number}?")
             .setMessage(
                 "План ${fmtS(s.expected_qty)} шт, принято ${fmtS(s.received_qty)} шт, " +
-                    "коробок ${s.boxes}$tail\n\nДобавить коробки в эту поставку будет нельзя."
+                    "${boxesOf(s.boxes, s.boxes_expected)}$tail\n\nДобавить коробки в эту поставку будет нельзя."
             )
             .setPositiveButton("Завершить") { _, _ ->
                 if (busy) return@setPositiveButton
@@ -561,7 +599,8 @@ class FfReceiveActivity : AppCompatActivity() {
                 textSize = 16f; setTypeface(null, Typeface.BOLD); setTextColor(TEXT)
             })
             card.addView(TextView(this).apply {
-                text = "${sp.city} · принято ${fmtS(sp.received_qty)} из ${fmtS(sp.expected_qty)} шт · ${sp.boxes} кор."
+                text = "${sp.city} · принято ${fmtS(sp.received_qty)} из ${fmtS(sp.expected_qty)} шт · " +
+                    boxesOf(sp.boxes, sp.boxes_expected)
                 textSize = 13f; setTextColor(MUTED)
             })
             sp.comment?.takeIf { it.isNotBlank() }?.let { c ->
@@ -575,11 +614,12 @@ class FfReceiveActivity : AppCompatActivity() {
     private fun renderSupply(s: FfSupplyDetail) {
         tvTitle.text = s.number
         tvSubtitle.text = "${s.owner_name} · ${s.city}"
-        tvTotals.text = "принято ${fmtS(s.received_qty)} из ${fmtS(s.expected_qty)} шт · ${s.boxes} кор."
+        tvTotals.text = "принято ${fmtS(s.received_qty)} из ${fmtS(s.expected_qty)} шт · " +
+            boxesOf(s.boxes, s.boxes_expected)
 
         llContent.addView(
-            note("Сканируйте товар на коробке — дальше штук в коробке и сколько коробок. " +
-                "Этикетки напечатаются сами.", BLUE_BG, BLUE),
+            note("Сканируйте товар на коробке — коробки подставятся из поставки: сверьте и " +
+                "нажмите «ПЕЧАТЬ». Этикетки напечатаются сами.", BLUE_BG, BLUE),
         )
         llContent.addView(section("ПЛАН И ФАКТ"))
         for (r in s.rows) {
@@ -601,9 +641,16 @@ class FfReceiveActivity : AppCompatActivity() {
             })
             card.addView(TextView(this).apply {
                 text = if (expected == 0.0) "нет в плане · принято ${fmtN(received)} шт · ${r.boxes} кор."
-                    else "принято ${fmtN(received)} из ${fmtN(expected)} шт · ${r.boxes} кор."
+                    else "принято ${fmtN(received)} из ${fmtN(expected)} шт · " +
+                        boxesOf(r.boxes, r.boxes_expected)
                 textSize = 13f; setTextColor(color)
             })
+            boxPlan(r.expected, r.per_box)?.let { plan ->
+                card.addView(TextView(this).apply {
+                    text = "по плану $plan"
+                    textSize = 12f; setTextColor(FAINT)
+                })
+            }
             llContent.addView(card, lp().apply { bottomMargin = dp(6) })
         }
 

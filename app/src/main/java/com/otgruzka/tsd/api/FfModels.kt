@@ -3,10 +3,11 @@ package com.otgruzka.tsd.api
 /**
  * Фулфилмент: приёмка товара клиента коробками (/ff).
  *
- * Поставка = что клиент везёт (план, заводит менеджер на сайте). На ТСД: скан
- * товара → штук в коробке × коробок → «ПЕЧАТЬ»: ядро заводит коробки, приходует
- * товар и ставит этикетки в очередь принт-станции — они печатаются сами.
- * Количества строками («48», «1.5»), как во всех ручках ядра.
+ * Поставка = что клиент везёт (план, заводит менеджер на сайте), с штуками в
+ * коробке — коробки «исходят из поставки». На ТСД: скан товара → коробки уже
+ * подставлены из плана (`suggested_*`) → проверить → «ПЕЧАТЬ»: ядро заводит
+ * коробки, приходует товар и ставит этикетки в очередь принт-станции — они
+ * печатаются сами. Количества строками («48», «1.5»), как во всех ручках ядра.
  */
 
 data class FfSupply(
@@ -20,6 +21,8 @@ data class FfSupply(
     val expected_qty: String,
     val received_qty: String,
     val boxes: Int,
+    /** Коробок по плану; null — коробку сообщили не по всем товарам. */
+    val boxes_expected: Int?,
     val positions: Int,
 )
 
@@ -29,6 +32,9 @@ data class FfRow(
     val sku: String?,
     val barcode: String?,
     val expected: String,
+    /** Штук в коробке по плану (null — не сообщили). */
+    val per_box: String?,
+    val boxes_expected: Int?,
     val received: String,
     val boxes: Int,
     val diff: String,
@@ -61,6 +67,7 @@ data class FfSupplyDetail(
     val expected_qty: String,
     val received_qty: String,
     val boxes: Int,
+    val boxes_expected: Int?,
     val positions: Int,
     val rows: List<FfRow>,
     val entries: List<FfEntry>,
@@ -75,10 +82,15 @@ data class FfProduct(
     val barcode: String?,
     /** null — товара нет в плане поставки (принять можно, будет расхождение). */
     val expected: String?,
+    /** Штук в коробке по плану и сколько коробок это даёт (полные + неполная). */
+    val per_box_plan: String?,
+    val boxes_expected: Int?,
     val received: String,
     val boxes: Int,
-    /** Сколько штук в коробке подставить: как в прошлый раз / квант карточки. */
+    /** Что подставить: коробки из плана на недовезённый остаток (полные, потом
+     *  одна неполная); без коробки в плане — прошлый ввод / квант карточки. */
     val suggested_per_box: String?,
+    val suggested_boxes: Int?,
 )
 
 data class FfBoxItem(val product_id: Long, val name: String, val qty: String)
