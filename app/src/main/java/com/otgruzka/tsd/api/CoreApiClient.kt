@@ -11,7 +11,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
-/** Клиент прод-ядра novamanya (qoimams.asia). Используется только разделом «Сборка». */
+/** Клиент прод-ядра novamanya (qoimams.asia, запасной адрес — см. CoreHosts). Используется только разделом «Сборка». */
 object CoreApiClient {
 
     private const val BASE_URL = "https://qoimams.asia/api/"
@@ -30,6 +30,7 @@ object CoreApiClient {
         val http = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor(CoreHosts.interceptor)
             .addInterceptor(logging)
             .addInterceptor { chain ->
                 val token = CoreAuth.token(appCtx)
@@ -56,7 +57,7 @@ object CoreApiClient {
                     val newResp = runBlocking {
                         Retrofit.Builder()
                             .baseUrl(BASE_URL)
-                            .client(OkHttpClient())
+                            .client(OkHttpClient.Builder().addInterceptor(CoreHosts.interceptor).build())
                             .addConverterFactory(GsonConverterFactory.create())
                             .build()
                             .create(CoreApi::class.java)

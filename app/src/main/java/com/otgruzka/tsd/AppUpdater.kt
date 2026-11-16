@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import com.google.gson.Gson
+import com.otgruzka.tsd.api.CoreHosts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -50,6 +51,7 @@ object AppUpdater {
         OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(5, TimeUnit.SECONDS)
+            .addInterceptor(CoreHosts.interceptor)
             .build()
     }
 
@@ -116,7 +118,8 @@ object AppUpdater {
             openInstaller(app, it)
             return
         }
-        val url = info.url ?: VERSION_URL.replace("version.json", "sborka.apk")
+        // DownloadManager качает мимо OkHttp — ставим адрес, который сейчас отвечает
+        val url = CoreHosts.rewrite(info.url ?: VERSION_URL.replace("version.json", "sborka.apk"))
         val dm = app.getSystemService(DownloadManager::class.java) ?: return
 
         // Стереть прошлую загрузку, иначе DownloadManager сохранит «…-1.apk»
