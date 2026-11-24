@@ -12,6 +12,8 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -27,6 +29,7 @@ import com.otgruzka.tsd.api.IntakeLine
 import com.otgruzka.tsd.api.IntakeLineQtyBody
 import com.otgruzka.tsd.api.IntakeReasonBody
 import com.otgruzka.tsd.api.IntakeScanBody
+import com.otgruzka.tsd.api.IntakeSupplier
 import com.otgruzka.tsd.api.IntakeWarehouse
 import com.otgruzka.tsd.api.InvCandidate
 import kotlinx.coroutines.launch
@@ -67,6 +70,7 @@ class IntakeActivity : AppCompatActivity() {
     private lateinit var api: CoreApi
     private var intakes: List<Intake> = emptyList()
     private var warehouses: List<IntakeWarehouse> = emptyList()
+    private var suppliers: List<IntakeSupplier> = emptyList()
     private var intake: Intake? = null
     private var busy = false
     // Пока открыт диалог, сканы игнорируем: второй скан открыл бы второй диалог
@@ -227,6 +231,7 @@ class IntakeActivity : AppCompatActivity() {
             try {
                 intakes = api.intakes("active", "open").items
                 warehouses = api.intakeWarehouses()
+                try { suppliers = api.intakeSuppliers() } catch (_: Exception) {}
                 listError = null
             } catch (e: Exception) {
                 listError = errText(e)
@@ -260,21 +265,84 @@ class IntakeActivity : AppCompatActivity() {
                 Beep.error()
                 showMsg("Не вижу склада, куда принимать. Проверьте, что у вас закреплён склад.", RED_BG, RED_TX)
             }
-            warehouses.size == 1 -> createIn(warehouses[0].id)
+            warehouses.size == 1 -> warnOpen(warehouses[0].id)
             else -> show(android.app.AlertDialog.Builder(this)
                 .setTitle("На какой склад?")
-                .setItems(warehouses.map { it.city + " (" + it.code + ")" }.toTypedArray()) { _, i ->
-                    createIn(warehouses[i].id)
+                .setItems(warehouses.map { it.city }.toTypedArray()) { _, i ->
+                    warnOpen(warehouses[i].id)
                 }
                 .setNegativeButton("Отмена", null))
         }
     }
 
-    private fun createIn(warehouseId: Int) {
+    /** На складе уже идёт приёмка: одна поставка — одна приёмка, даже с трёх ТСД
+     *  (владелец 2026-11-24). Та же поставка — продолжаем в ней, другая — новая. */
+    private fun warnOpen(warehouseId: Int) {
+        val open = intakes.filter { it.warehouse_id == warehouseId }
+        if (open.isEmpty()) { askSupplier(warehouseId); return }
+        val names = open.map { "${it.number} · ${it.supplier_name ?: "поставщик не назван"} · ${it.created_by}" }
+        show(android.app.AlertDialog.Builder(this)
+            .setTitle("Уже идёт приёмка")
+            .setMessage(
+                "На складе уже принимают:\n" + names.joinToString("\n") +
+                    "\n\nЭто та же поставка? Тогда продолжайте в ней, второй раз заводить не надо. " +
+                    "Другой поставщик или отдельная поставка — новая приёмка."
+            )
+            .setPositiveButton(if (open.size == 1) "Продолжить в ней" else "Продолжить в одной из них") { _, _ ->
+                if (open.size == 1) openIntake(open[0].id)
+                else show(android.app.AlertDialog.Builder(this)
+                    .setTitle("В какой?")
+                    .setItems(names.toTypedArray()) { _, i -> openIntake(open[i].id) }
+                    .setNegativeButton("Отмена", null))
+            }
+            .setNegativeButton("Новая приёмка") { _, _ -> askSupplier(warehouseId) }
+            .setNeutralButton("Отмена", null))
+    }
+
+    /** От кого поставка: подсказка из справочника контрагентов, можно вписать своё. */
+    private fun askSupplier(warehouseId: Int) {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        box.addView(TextView(this).apply {
+            text = "Чтобы другие ТСД и сайт видели, чья это поставка"
+            textSize = 13f; setTextColor(MUTED); setPadding(0, 0, 0, dp(8))
+        })
+        val et = AutoCompleteTextView(this).apply {
+            hint = "Поставщик"
+            textSize = 18f
+            threshold = 1
+            setAdapter(ArrayAdapter(this@IntakeActivity, android.R.layout.simple_dropdown_item_1line,
+                suppliers.map { it.name }))
+        }
+        box.addView(et)
+        var dialog: android.app.AlertDialog? = null
+        fun submit() {
+            val name = et.text.toString().trim()
+            if (name.isEmpty()) { Beep.error(); toast("Впишите поставщика"); return }
+            val cp = suppliers.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            dialog?.dismiss()
+            createIn(warehouseId, name, cp?.id)
+        }
+        et.setOnEditorActionListener { _, _, _ -> submit(); true }
+        dialog = show(android.app.AlertDialog.Builder(this)
+            .setTitle("От кого поставка?")
+            .setView(box)
+            .setPositiveButton("НАЧАТЬ ПРИЁМКУ", null)
+            .setNegativeButton("Отмена", null))
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener { submit() }
+        et.requestFocus()
+        dialog.window?.setSoftInputMode(
+            android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+        )
+    }
+
+    private fun createIn(warehouseId: Int, supplierName: String, counterpartyId: Int?) {
         busy = true
         lifecycleScope.launch {
             try {
-                intake = api.intakeCreate(IntakeCreateBody(warehouseId))
+                intake = api.intakeCreate(IntakeCreateBody(warehouseId, null, supplierName, counterpartyId))
                 Beep.ok()
             } catch (e: Exception) {
                 Beep.error(); showMsg(errText(e), RED_BG, RED_TX)
@@ -564,8 +632,12 @@ class IntakeActivity : AppCompatActivity() {
                 setOnClickListener { openIntake(i.id) }
             }
             card.addView(TextView(this).apply {
-                text = "${i.number} · ${i.warehouse_name ?: ""}"
+                text = "${i.number} · ${i.supplier_name ?: "поставщик не назван"}"
                 textSize = 17f; setTypeface(null, Typeface.BOLD); setTextColor(TEXT)
+            })
+            card.addView(TextView(this).apply {
+                text = i.warehouse_name ?: ""
+                textSize = 13f; setTextColor(MUTED)
             })
             card.addView(TextView(this).apply {
                 text = "${i.lines_count} поз. · ${i.qty_total} шт · начал ${i.created_by}" +
@@ -588,7 +660,7 @@ class IntakeActivity : AppCompatActivity() {
 
     private fun renderIntake(it: Intake) {
         tvTitle.text = it.number
-        tvSubtitle.text = "${it.warehouse_name ?: ""} · начал ${it.created_by}"
+        tvSubtitle.text = "${it.supplier_name ?: "поставщик не назван"} · ${it.warehouse_name ?: ""} · начал ${it.created_by}"
         tvTotals.text = "${it.lines.size} поз. · ${it.qty_total} шт" +
             (if (it.unknown_count > 0) " · новых товаров ${it.unknown_count}" else "")
 

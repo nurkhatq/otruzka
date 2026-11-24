@@ -40,6 +40,9 @@ data class Intake(
     val warehouse_id: Int,
     val warehouse_name: String?,
     val comment: String?,
+    /** Поставщик, которого назвали на ТСД при старте приёмки. */
+    val supplier_name: String?,
+    val counterparty_id: Int?,
     val created_by: String,
     val created_at: String?,
     val submitted_by: String?,
@@ -51,7 +54,15 @@ data class Intake(
 
 data class IntakeBoard(val items: List<Intake>, val total: Int, val counts: Map<String, Int>?)
 
-data class IntakeCreateBody(val warehouse_id: Int, val comment: String? = null)
+data class IntakeCreateBody(
+    val warehouse_id: Int,
+    val comment: String? = null,
+    val supplier_name: String? = null,
+    val counterparty_id: Int? = null,
+)
+
+/** Контрагент (поставщик) из справочника ядра — для подсказки при старте приёмки. */
+data class IntakeSupplier(val id: Int, val name: String)
 
 data class IntakeScanBody(
     val code: String?,

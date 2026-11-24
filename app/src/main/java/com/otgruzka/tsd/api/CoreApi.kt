@@ -252,7 +252,11 @@ interface CoreApi {
     suspend fun intakes(
         @Query("section") section: String = "active",
         @Query("state") state: String? = null,
+        @Query("warehouse_id") warehouseId: Int? = null,
     ): IntakeBoard
+
+    @GET("counterparties")
+    suspend fun intakeSuppliers(@Query("limit") limit: Int = 500): List<IntakeSupplier>
 
     @POST("intakes")
     suspend fun intakeCreate(@Body body: IntakeCreateBody): Intake
