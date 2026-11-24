@@ -25,6 +25,7 @@ import androidx.lifecycle.lifecycleScope
 import com.otgruzka.tsd.api.CoreApi
 import com.otgruzka.tsd.api.CoreApiClient
 import com.otgruzka.tsd.api.PickerBulkScanBody
+import com.otgruzka.tsd.api.PickerCompleteBody
 import com.otgruzka.tsd.api.PickerOrderItem
 import com.otgruzka.tsd.api.PickerScanBody
 import com.otgruzka.tsd.api.PickerTask
@@ -69,6 +70,8 @@ class PickerTaskActivity : AppCompatActivity() {
     private var busy = false
     private var completing = false
 
+    // Пока открыт диалог (коробки, количество), сканы игнорируем
+    private var openDialogs = 0
     private var bulkMode = false
     private var modeInitialized = false
     private var bulkBarcode: String? = null
@@ -129,7 +132,7 @@ class PickerTaskActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (bulkBarcode != null) return super.dispatchKeyEvent(event)  // вводим кол-во
+        if (bulkBarcode != null || openDialogs > 0) return super.dispatchKeyEvent(event)  // вводим кол-во
         if (event.action == KeyEvent.ACTION_DOWN) {
             val ch = event.unicodeChar.toChar()
             when {
@@ -291,19 +294,72 @@ class PickerTaskActivity : AppCompatActivity() {
 
     private fun allDone(): Boolean = nextPending() == null
 
+    /** B2B и перемещение: позиция — строка заказа с количеством, коробки спрашиваем сами. */
+    private fun isExternal(t: PickerTask?) = t?.source == "b2b" || t?.source == "transfer"
+
     private fun handleBarcode(raw: String) {
-        if (busy || completing || task == null) return
+        if (busy || completing || task == null || openDialogs > 0) return
         val code = raw.replace(Regex("-\\d+$"), "")   // Mindeo добавляет счётчик
         if (bulkMode && !allDone()) {
             if (bulkBarcode != null) return
             handleScanBulk(code)
         } else if (!allDone()) {
-            scanNext(code)
+            val target = nextPending()
+            if (isExternal(task) && target != null && required(target) > 1) {
+                // Крупная позиция B2B/перемещения: один скан и сколько собрали (v2.16)
+                askQty(target) { qty -> scanNext(code, qty) }
+            } else {
+                scanNext(code)
+            }
         }
     }
 
+    /** Сколько штук собрано по позиции: ядро берёт это число (не больше нужного). */
+    private fun askQty(target: PickerOrderItem, onOk: (Int) -> Unit) {
+        val need = required(target)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        box.addView(TextView(this).apply {
+            text = target.name ?: target.offer_code ?: ""
+            textSize = 15f; setTypeface(null, Typeface.BOLD); setTextColor(TEXT)
+        })
+        box.addView(TextView(this).apply {
+            text = "Нужно $need шт. Сколько собрали?"
+            textSize = 13f; setTextColor(MUTED); setPadding(0, dp(4), 0, dp(8))
+        })
+        val et = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(need.toString())
+            textSize = 28f; gravity = Gravity.CENTER
+            setSelectAllOnFocus(true)
+        }
+        box.addView(et)
+        var dialog: android.app.AlertDialog? = null
+        fun submit() {
+            val v = et.text.toString().toIntOrNull()
+            if (v == null || v < 0 || v > need) { Beep.error(); toast("Число от 0 до $need"); return }
+            dialog?.dismiss()
+            onOk(v)
+        }
+        et.setOnEditorActionListener { _, _, _ -> submit(); true }
+        dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Сколько штук?")
+            .setView(box)
+            .setPositiveButton("ГОТОВО", null)
+            .setNegativeButton("Отмена", null)
+            .create()
+        dialog.setOnShowListener { openDialogs++ }
+        dialog.setOnDismissListener { openDialogs = maxOf(0, openDialogs - 1) }
+        dialog.show()
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener { submit() }
+        et.requestFocus()
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+    }
+
     /** Один скан = одна позиция (или одна штука при qty>1). Статус решает сервер. */
-    private fun scanNext(barcode: String?) {
+    private fun scanNext(barcode: String?, quantity: Int? = null) {
         val t = task ?: return
         val target = nextPending() ?: return
         if (busy) return
@@ -317,6 +373,7 @@ class PickerTaskActivity : AppCompatActivity() {
                         position_index = target.position_index ?: 0,
                         barcode = barcode,
                         match_status = if (barcode == null) "no_barcode" else "matched",
+                        quantity = quantity,
                     )
                 )
                 onTask(updated)
@@ -328,7 +385,8 @@ class PickerTaskActivity : AppCompatActivity() {
                 when (st) {
                     "matched" -> { Beep.ok(); showMsg("✓ Есть!", GREEN_BG, GREEN_TX) }
                     "no_barcode" -> { Beep.warn(); showMsg("Отмечено без штрихкода", ORANGE_BG, ORANGE_TX) }
-                    else -> { Beep.warn(); showMsg("Штрихкод не тот — записан для сверки", Color.parseColor("#FEF9C3"), YELLOW_TX) }
+                    // Чужой товар: ядро с 2026-11-23 ничего не засчитывает, позиция ждёт верный скан
+                    else -> { Beep.error(); showMsg("ШТРИХКОД НЕ ТОТ — отсканируйте нужный товар", RED_BG, RED_TX) }
                 }
                 // Авто-завершение: единственный заказ полностью собран и совпал
                 busy = false
@@ -405,17 +463,87 @@ class PickerTaskActivity : AppCompatActivity() {
 
     // ─── Complete / release ──────────────────────────────────────────────────
 
+    /** B2B и перемещение: перед «Завершить» спрашиваем коробки — накладные по ним
+     *  печатаются сами на принт-станции (владелец 2026-11-23). Kaspi — без вопроса. */
     private fun doComplete() {
+        if (completing) return
+        val t = task
+        if (isExternal(t)) askBoxes(t!!.boxes ?: 1) { boxes -> completeWith(boxes) }
+        else completeWith(null)
+    }
+
+    private fun askBoxes(initial: Int, onOk: (Int) -> Unit) {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        box.addView(TextView(this).apply {
+            text = "На каждую коробку напечатается своя накладная."
+            textSize = 13f; setTextColor(MUTED); setPadding(0, 0, 0, dp(8))
+        })
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        }
+        val et = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(initial.toString())
+            textSize = 30f; gravity = Gravity.CENTER
+            setSelectAllOnFocus(true)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        fun step(d: Int) {
+            val v = (et.text.toString().toIntOrNull() ?: 0) + d
+            et.setText(v.coerceIn(1, 200).toString())
+        }
+        row.addView(stepButton("−") { step(-1) })
+        row.addView(et)
+        row.addView(stepButton("+") { step(1) })
+        box.addView(row)
+        var dialog: android.app.AlertDialog? = null
+        fun submit() {
+            val v = et.text.toString().toIntOrNull()
+            if (v == null || v < 1 || v > 200) { Beep.error(); toast("Коробок от 1 до 200"); return }
+            if (v > 30) {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Точно $v коробок?")
+                    .setMessage("Напечатается $v накладных.")
+                    .setPositiveButton("Да") { _, _ -> dialog?.dismiss(); onOk(v) }
+                    .setNegativeButton("Исправить", null)
+                    .show()
+                return
+            }
+            dialog?.dismiss()
+            onOk(v)
+        }
+        et.setOnEditorActionListener { _, _, _ -> submit(); true }
+        dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Сколько коробок?")
+            .setView(box)
+            .setPositiveButton("ЗАВЕРШИТЬ И ПЕЧАТАТЬ", null)
+            .setNegativeButton("Отмена", null)
+            .create()
+        dialog.setOnShowListener { openDialogs++ }
+        dialog.setOnDismissListener { openDialogs = maxOf(0, openDialogs - 1) }
+        dialog.show()
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener { submit() }
+        et.requestFocus()
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+    }
+
+    private fun completeWith(boxes: Int?) {
         if (completing) return
         completing = true
         lifecycleScope.launch {
             try {
-                val r = api.completeTask(taskId)
+                val r = api.completeTask(taskId, PickerCompleteBody(boxes))
                 val cancelled = r.cancelled_orders ?: 0
                 var msg = "Готово."
                 if (cancelled > 0) msg += " В отмену: $cancelled."
-                if (r.pdf_queued || !r.pdf_filenames.isNullOrEmpty()) msg += " Печать отправлена."
-                toast(msg)
+                if (boxes != null) {
+                    msg += if (r.pdf_queued) " Коробок ${r.boxes ?: boxes}, накладные печатаются."
+                        else " Коробок ${r.boxes ?: boxes}. Накладные на принтер не ушли — распечатайте с сайта."
+                } else if (r.pdf_queued || !r.pdf_filenames.isNullOrEmpty()) msg += " Печать отправлена."
+                Toast.makeText(this@PickerTaskActivity, msg, Toast.LENGTH_LONG).show()
                 finish()
             } catch (e: Exception) {
                 toast("Ошибка завершения: ${e.message?.take(60)}")

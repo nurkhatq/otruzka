@@ -109,6 +109,10 @@ class MainActivity : AppCompatActivity() {
             // Приёмка отмен/возвратов — гейт по праву returns проверяет сервер
             startActivity(Intent(this, ReturnsActivity::class.java))
         }
+        findViewById<TextView>(R.id.tvIntake).setOnClickListener {
+            // Приёмка товара без заказа поставщику (v2.16): право receipt проверяет сервер
+            startActivity(Intent(this, IntakeActivity::class.java))
+        }
         findViewById<TextView>(R.id.tvInventory).setOnClickListener {
             // Инвентаризация переехала в ядро (/inventory): один логин, права
             // inventory_count проверяет сервер

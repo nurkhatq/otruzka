@@ -48,7 +48,7 @@
                 android:paddingLeft="8dp"/>
         </LinearLayout>
 
-<!-- Восемь ссылок в два ряда по четыре — в один ряд на узком ТСД не влезают -->
+<!-- Девять ссылок в два ряда — в один ряд на узком ТСД не влезают -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -79,13 +79,26 @@
                 android:paddingTop="10dp"
                 android:paddingBottom="6dp"/>
 
+            <!-- Приёмка товара без заказа поставщику (v2.16) -->
+            <TextView
+                android:id="@+id/tvIntake"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="Приёмка"
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                android:paddingTop="10dp"
+                android:paddingBottom="6dp"/>
+
             <TextView
                 android:id="@+id/tvReceiving"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:text="Приёмка"
+                android:text="Возвраты"
                 android:textSize="13sp"
                 android:textColor="@color/primary"
                 android:paddingTop="10dp"

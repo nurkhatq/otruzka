@@ -76,6 +76,11 @@
             android:windowSoftInputMode="adjustResize|stateHidden" />
 
         <activity
+            android:name=".IntakeActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
+        <activity
             android:name=".ReturnReceiveActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize|stateHidden" />

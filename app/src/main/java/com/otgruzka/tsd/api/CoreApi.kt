@@ -49,8 +49,9 @@ interface CoreApi {
     @POST("picker/tasks/{id}/bulk-scan")
     suspend fun bulkScan(@Path("id") id: Int, @Body body: PickerBulkScanBody): PickerTask
 
+    /** Тело — коробки для B2B и перемещений (ТСД спрашивает перед «Завершить»); у Kaspi `{}`. */
     @POST("picker/tasks/{id}/complete")
-    suspend fun completeTask(@Path("id") id: Int): PickerCompleteResponse
+    suspend fun completeTask(@Path("id") id: Int, @Body body: PickerCompleteBody): PickerCompleteResponse
 
     @POST("picker/tasks/{id}/release")
     suspend fun releaseTask(@Path("id") id: Int): Map<String, Boolean>
@@ -241,4 +242,35 @@ interface CoreApi {
 
     @POST("ff/supplies/{id}/close")
     suspend fun ffClose(@Path("id") id: Long): FfSupplyDetail
+
+    // ─── Приёмка без заказа поставщику (/intakes) ────────────────────────────
+
+    @GET("intakes/warehouses")
+    suspend fun intakeWarehouses(): List<IntakeWarehouse>
+
+    @GET("intakes")
+    suspend fun intakes(
+        @Query("section") section: String = "active",
+        @Query("state") state: String? = null,
+    ): IntakeBoard
+
+    @POST("intakes")
+    suspend fun intakeCreate(@Body body: IntakeCreateBody): Intake
+
+    @GET("intakes/{id}")
+    suspend fun intake(@Path("id") id: Long): Intake
+
+    @POST("intakes/{id}/scan")
+    suspend fun intakeScan(@Path("id") id: Long, @Body body: IntakeScanBody): IntakeScanResponse
+
+    @PUT("intakes/{id}/lines/{lineId}")
+    suspend fun intakeSetLine(
+        @Path("id") id: Long, @Path("lineId") lineId: Long, @Body body: IntakeLineQtyBody
+    ): Intake
+
+    @POST("intakes/{id}/submit")
+    suspend fun intakeSubmit(@Path("id") id: Long): Intake
+
+    @POST("intakes/{id}/cancel")
+    suspend fun intakeCancel(@Path("id") id: Long, @Body body: IntakeReasonBody): Intake
 }

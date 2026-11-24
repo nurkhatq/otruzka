@@ -71,7 +71,11 @@ data class PickerTask(
     val claimed_at: String?,
     val completed_at: String?,
     val waybill_job_id: Long?,
-    val pdf_filename: String?   // приходит только из /picker/history
+    val pdf_filename: String?,  // приходит только из /picker/history
+    /** kaspi | b2b | transfer: у B2B и перемещений позиция = строка заказа с количеством,
+     *  перед «Завершить» ТСД спрашивает коробки (накладные печатаются сами). */
+    val source: String? = null,
+    val boxes: Int? = null,
 )
 
 data class PickerSessionInfo(
@@ -101,8 +105,12 @@ data class PickerScanBody(
     val order_code: String,
     val position_index: Int = 0,
     val barcode: String? = null,
-    val match_status: String = "matched"
+    val match_status: String = "matched",
+    /** B2B и перемещения: сколько штук собрано по позиции (всего, не прибавка). */
+    val quantity: Int? = null,
 )
+
+data class PickerCompleteBody(val boxes: Int? = null)
 
 data class PickerBulkScanBody(
     val barcode: String?,
@@ -117,7 +125,9 @@ data class PickerCompleteResponse(
     val no_barcode: Int?,
     val cancelled_orders: Int?,
     val pdf_queued: Boolean = false,
-    val pdf_filenames: List<String>?
+    val pdf_filenames: List<String>?,
+    val boxes: Int? = null,
+    val picked: Int? = null,
 )
 
 data class PickerHistoryResponse(
