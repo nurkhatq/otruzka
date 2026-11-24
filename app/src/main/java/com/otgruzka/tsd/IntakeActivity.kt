@@ -44,8 +44,11 @@ import java.util.UUID
  * → скан товара → сколько штук → ещё товар… → «ЗАВЕРШИТЬ». Приёмка уходит на
  * сайт в «Заказы поставщику → С ТСД»: там дописывают карточки новым товарам и
  * поставщика, ядро заводит заказ и проводит приёмку. Штрихкода нет в каталоге —
- * строка «НОВЫЙ ТОВАР» по коду, карточку заведут на сайте. Один код на две
- * карточки — ТСД спрашивает какую. Наборы не принимаем.
+ * строка «НОВЫЙ ТОВАР» по коду, карточку заведут на сайте (ТСД спросит, как
+ * товар называется, можно пропустить). Код не читается — «ВВЕСТИ КОД» руками.
+ * Штрихкода нет совсем — «БЕЗ ШТРИХКОДА»: записываем названием, любым, как на
+ * упаковке (владелец 2026-11-24). Один код на две карточки — ТСД спрашивает
+ * какую. Наборы не принимаем.
  *
  * Повтор запроса после обрыва связи с тем же client_ref ничего не прибавляет.
  */
@@ -359,6 +362,12 @@ class IntakeActivity : AppCompatActivity() {
         if (busy || openDialogs > 0) return
         val code = raw.trim().replace(Regex("-\\d+$"), "")  // Mindeo добавляет счётчик
         if (code.isEmpty()) return
+        scanCode(code)
+    }
+
+    /** Код со сканера или набранный руками (диалог ввода только что закрылся — его
+     *  счётчик ещё не обнулён, поэтому проверки openDialogs здесь нет). */
+    private fun scanCode(code: String) {
         val it = intake
         if (it == null) {
             Beep.warn()
@@ -375,13 +384,47 @@ class IntakeActivity : AppCompatActivity() {
         ) { qty -> sendScan(code, null, qty, UUID.randomUUID().toString()) }
     }
 
-    private fun sendScan(code: String?, productId: Int?, qty: Int, clientRef: String) {
+    /** Код не читается сканером: набрать руками. Дальше как обычный скан. */
+    private fun askCode() {
+        if (intake == null) { Beep.warn(); showMsg("Сначала откройте или начните приёмку", ORANGE_BG, ORANGE_TX); return }
+        askText(
+            title = "Ввести код",
+            note = "Штрихкод с упаковки цифрами, как на этикетке",
+            hint = "Штрихкод",
+            initial = "",
+            required = true,
+            numeric = true,
+            okLabel = "ДАЛЬШЕ",
+        ) { code -> scanCode(code ?: return@askText) }
+    }
+
+    /** Штрихкода нет совсем: записываем товар названием, любым, как на упаковке. */
+    private fun askNoBarcode() {
+        if (intake == null) { Beep.warn(); showMsg("Сначала откройте или начните приёмку", ORANGE_BG, ORANGE_TX); return }
+        askText(
+            title = "Товар без штрихкода",
+            note = "Как называется? Любое название, как на упаковке: бренд, что это, объём. " +
+                "Карточку заведут на сайте.",
+            hint = "Название",
+            initial = "",
+            required = true,
+            numeric = false,
+            okLabel = "ДАЛЬШЕ",
+        ) { name ->
+            val nm = name ?: return@askText
+            askQty(title = "Сколько штук?", note = nm, initial = 1) { qty ->
+                sendScan(null, null, qty, UUID.randomUUID().toString(), name = nm)
+            }
+        }
+    }
+
+    private fun sendScan(code: String?, productId: Int?, qty: Int, clientRef: String, name: String? = null) {
         val it = intake ?: return
         if (busy) return
         busy = true
         lifecycleScope.launch {
             try {
-                val res = api.intakeScan(it.id, IntakeScanBody(code, productId, qty, clientRef))
+                val res = api.intakeScan(it.id, IntakeScanBody(code, productId, qty, clientRef, name))
                 intake = res.intake
                 when (res.result) {
                     "OK" -> {
@@ -397,11 +440,26 @@ class IntakeActivity : AppCompatActivity() {
                         Beep.warn()
                         val ln = res.line
                         render()
+                        val what = ln?.name_hint ?: code ?: "товар"
                         showMsg(
-                            "НОВЫЙ ТОВАР $code\n+$qty шт, всего ${ln?.qty ?: qty}\n\n" +
+                            "НОВЫЙ ТОВАР: $what\n+$qty шт, всего ${ln?.qty ?: qty}\n\n" +
                                 "Карточки в каталоге нет — её заведут на сайте при подтверждении.",
                             ORANGE_BG, ORANGE_TX, 4000,
                         )
+                        // Первый раз видим этот код: спросим название, сайту будет понятнее,
+                        // что это за товар. Можно пропустить.
+                        if (ln != null && code != null && ln.name_hint.isNullOrBlank() && ln.qty == qty) {
+                            askText(
+                                title = "Как называется товар?",
+                                note = "Штрихкод $code. Название, как на упаковке, чтобы на сайте " +
+                                    "поняли, что это. Можно пропустить.",
+                                hint = "Название",
+                                initial = "",
+                                required = false,
+                                numeric = false,
+                                okLabel = "СОХРАНИТЬ",
+                            ) { nm -> if (!nm.isNullOrBlank()) setLineName(ln, nm) }
+                        }
                     }
                     "AMBIGUOUS" -> {
                         Beep.warn()
@@ -483,6 +541,73 @@ class IntakeActivity : AppCompatActivity() {
         )
     }
 
+    /** Диалог текста: код руками или название. `required` — пустое не пускаем,
+     *  иначе есть «Пропустить» (onOk(null)). Enter подтверждает. */
+    private fun askText(
+        title: String, note: String, hint: String, initial: String, required: Boolean,
+        numeric: Boolean, okLabel: String, onOk: (String?) -> Unit,
+    ) {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        box.addView(TextView(this).apply {
+            text = note; textSize = 14f; setTextColor(MUTED); setPadding(0, 0, 0, dp(8))
+        })
+        val et = EditText(this).apply {
+            this.hint = hint
+            inputType = if (numeric) InputType.TYPE_CLASS_NUMBER
+                else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                    InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setText(initial)
+            textSize = 20f
+            setSelectAllOnFocus(true)
+        }
+        box.addView(et)
+        var dialog: android.app.AlertDialog? = null
+        fun submit() {
+            val v = et.text.toString().trim().replace(Regex("\\s+"), " ")
+            if (v.isEmpty() && required) { Beep.error(); toast("Впишите $hint") ; return }
+            if (v.length > 300) { Beep.error(); toast("Не длиннее 300 знаков"); return }
+            dialog?.dismiss()
+            onOk(v.ifEmpty { null })
+        }
+        et.setOnEditorActionListener { _, _, _ -> submit(); true }
+        val b = android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(box)
+            .setPositiveButton(okLabel, null)
+            .setNegativeButton("Отмена", null)
+        if (!required) b.setNeutralButton("Пропустить") { _, _ -> onOk(null) }
+        dialog = show(b)
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).apply {
+            textSize = 16f
+            setOnClickListener { submit() }
+        }
+        et.requestFocus()
+        dialog.window?.setSoftInputMode(
+            android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+        )
+    }
+
+    /** Название новому товару (строка без карточки): количество не меняем. */
+    private fun setLineName(ln: IntakeLine, name: String) {
+        val it = intake ?: return
+        if (busy) return
+        busy = true
+        lifecycleScope.launch {
+            try {
+                intake = api.intakeSetLine(it.id, ln.id, IntakeLineQtyBody(ln.qty, name))
+                Beep.ok()
+                render()
+            } catch (e: Exception) {
+                Beep.error(); showMsg(errText(e), RED_BG, RED_TX)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
     private fun stepButton(label: String, onClick: () -> Unit) = TextView(this).apply {
         text = label
         textSize = 26f; setTypeface(null, Typeface.BOLD)
@@ -495,7 +620,8 @@ class IntakeActivity : AppCompatActivity() {
 
     /** Поправить количество строки: тап по строке. Ноль — убрать. */
     private fun editLine(ln: IntakeLine) {
-        val name = ln.product?.name ?: "Новый товар ${ln.barcode}"
+        val noCard = ln.product == null
+        val name = ln.product?.name ?: ln.name_hint ?: "Новый товар ${ln.barcode}"
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), 0)
@@ -514,24 +640,37 @@ class IntakeActivity : AppCompatActivity() {
             setSelectAllOnFocus(true)
         }
         box.addView(et)
+        // У товара без карточки можно поправить и название (без штрихкода — не стереть)
+        val etName: EditText? = if (noCard) EditText(this).apply {
+            hint = if (ln.barcode == null) "Название (обязательно)" else "Название, как на упаковке"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setText(ln.name_hint ?: "")
+            textSize = 16f
+        } else null
+        etName?.let { box.addView(it) }
         show(android.app.AlertDialog.Builder(this)
-            .setTitle("Поправить количество")
+            .setTitle(if (noCard) "Поправить строку" else "Поправить количество")
             .setView(box)
             .setPositiveButton("Сохранить") { _, _ ->
                 val v = et.text.toString().toIntOrNull()
                 if (v == null || v < 0) { Beep.error(); toast("Число от 0"); return@setPositiveButton }
-                setLineQty(ln, v)
+                val nm = etName?.text?.toString()?.trim()?.replace(Regex("\\s+"), " ")
+                if (etName != null && ln.barcode == null && nm.isNullOrEmpty() && v > 0) {
+                    Beep.error(); toast("У товара без штрихкода нужно название"); return@setPositiveButton
+                }
+                setLineQty(ln, v, if (etName != null && nm != (ln.name_hint ?: "")) nm else null)
             }
             .setNegativeButton("Отмена", null))
     }
 
-    private fun setLineQty(ln: IntakeLine, qty: Int) {
+    private fun setLineQty(ln: IntakeLine, qty: Int, name: String? = null) {
         val it = intake ?: return
         if (busy) return
         busy = true
         lifecycleScope.launch {
             try {
-                intake = api.intakeSetLine(it.id, ln.id, IntakeLineQtyBody(qty))
+                intake = api.intakeSetLine(it.id, ln.id, IntakeLineQtyBody(qty, name))
                 Beep.ok()
                 render()
                 showMsg(if (qty == 0) "Строка убрана" else "Исправлено: $qty шт", GREEN_BG, GREEN)
@@ -665,7 +804,8 @@ class IntakeActivity : AppCompatActivity() {
             (if (it.unknown_count > 0) " · новых товаров ${it.unknown_count}" else "")
 
         llContent.addView(
-            note("Сканируйте товар и вписывайте, сколько штук приехало. Нажать на строку — поправить количество.",
+            note("Сканируйте товар и вписывайте, сколько штук приехало. Код не читается — «ВВЕСТИ КОД». " +
+                "Штрихкода нет — «БЕЗ ШТРИХКОДА», запишите названием. Нажать на строку — поправить.",
                 BLUE_BG, BLUE),
         )
         if (it.lines.isEmpty()) {
@@ -690,13 +830,16 @@ class IntakeActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             col.addView(TextView(this).apply {
-                text = p?.name ?: "НОВЫЙ ТОВАР"
+                text = p?.name ?: ln.name_hint ?: "НОВЫЙ ТОВАР"
                 textSize = 15f; setTypeface(null, Typeface.BOLD)
                 setTextColor(if (p == null) ORANGE_TX else TEXT)
             })
             col.addView(TextView(this).apply {
-                text = if (p == null) "${ln.barcode} · карточки нет, заведут на сайте"
-                    else listOfNotNull(p.main_sku, ln.barcode).joinToString(" · ")
+                text = when {
+                    p != null -> listOfNotNull(p.main_sku, ln.barcode).joinToString(" · ")
+                    ln.barcode == null -> "БЕЗ ШТРИХКОДА · карточки нет, заведут на сайте"
+                    else -> "НОВЫЙ ТОВАР ${ln.barcode} · карточки нет, заведут на сайте"
+                }
                 textSize = 12f; setTextColor(if (p == null) ORANGE_TX else FAINT)
             })
             card.addView(col)
@@ -709,6 +852,13 @@ class IntakeActivity : AppCompatActivity() {
             llContent.addView(card, lp().apply { bottomMargin = dp(6) })
         }
 
+        val tools = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(8))
+        }
+        tools.addView(smallButton("ВВЕСТИ КОД") { askCode() }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(8) })
+        tools.addView(smallButton("БЕЗ ШТРИХКОДА") { askNoBarcode() }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        llBottom.addView(tools)
         llBottom.addView(button("ЗАВЕРШИТЬ ПРИЁМКУ", GREEN, Color.WHITE) { submitIntake() }, lp())
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -752,6 +902,16 @@ class IntakeActivity : AppCompatActivity() {
         setTextColor(fg)
         background = rounded(bg, 14)
         setPadding(0, dp(16), 0, dp(16))
+        setOnClickListener { onClick() }
+    }
+
+    private fun smallButton(label: String, onClick: () -> Unit) = TextView(this).apply {
+        text = label
+        textSize = 14f; setTypeface(null, Typeface.BOLD)
+        gravity = Gravity.CENTER
+        setTextColor(BLUE)
+        background = roundedBorder(BLUE_BG, BLUE, 12)
+        setPadding(dp(6), dp(13), dp(6), dp(13))
         setOnClickListener { onClick() }
     }
 

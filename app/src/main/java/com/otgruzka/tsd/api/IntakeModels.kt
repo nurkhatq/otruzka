@@ -65,12 +65,15 @@ data class IntakeCreateBody(
 data class IntakeSupplier(val id: Int, val name: String)
 
 data class IntakeScanBody(
+    /** Скан или код, набранный руками; null — товар без штрихкода, тогда нужен `name`. */
     val code: String?,
     /** Выбор из нескольких карточек на один штрихкод (после AMBIGUOUS). */
     val product_id: Int? = null,
     val qty: Int,
     /** UUID скана: повтор после обрыва связи ничего не прибавит. */
     val client_ref: String,
+    /** Название: у товара без штрихкода обязательно, у неизвестного кода — подсказка сайту. */
+    val name: String? = null,
 )
 
 /** result: OK | NEW | AMBIGUOUS | KIT | DUPLICATE */
@@ -82,6 +85,7 @@ data class IntakeScanResponse(
     val intake: Intake,
 )
 
-data class IntakeLineQtyBody(val qty: Int)
+/** `name_hint` — название нового товара (у строки без штрихкода не стереть). */
+data class IntakeLineQtyBody(val qty: Int, val name_hint: String? = null)
 
 data class IntakeReasonBody(val reason: String? = null)
