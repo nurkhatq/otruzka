@@ -76,6 +76,10 @@ data class PickerTask(
      *  перед «Завершить» ТСД спрашивает коробки (накладные печатаются сами). */
     val source: String? = null,
     val boxes: Int? = null,
+    /** v2.17: служба доставки без веса заказ не примет (JanaPost) и у товаров нет веса в
+     *  карточках — на «Завершить» спрашиваем вес посылки. weight_kg — уже известный вес. */
+    val need_weight: Boolean = false,
+    val weight_kg: Double? = null,
 )
 
 data class PickerSessionInfo(
@@ -110,7 +114,7 @@ data class PickerScanBody(
     val quantity: Int? = null,
 )
 
-data class PickerCompleteBody(val boxes: Int? = null)
+data class PickerCompleteBody(val boxes: Int? = null, val weight_kg: Double? = null)
 
 data class PickerBulkScanBody(
     val barcode: String?,

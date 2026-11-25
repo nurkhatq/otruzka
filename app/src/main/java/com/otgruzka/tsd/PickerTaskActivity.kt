@@ -468,11 +468,15 @@ class PickerTaskActivity : AppCompatActivity() {
     private fun doComplete() {
         if (completing) return
         val t = task
-        if (isExternal(t)) askBoxes(t!!.boxes ?: 1) { boxes -> completeWith(boxes) }
-        else completeWith(null)
+        if (isExternal(t)) {
+            askBoxes(t!!.boxes ?: 1, if (t.need_weight) t.weight_kg ?: 0.0 else null) { boxes, weight ->
+                completeWith(boxes, weight)
+            }
+        } else completeWith(null)
     }
 
-    private fun askBoxes(initial: Int, onOk: (Int) -> Unit) {
+    /** weightInitial != null — у задания нужен вес посылки (v2.17): поле веса обязательно. */
+    private fun askBoxes(initial: Int, weightInitial: Double?, onOk: (Int, Double?) -> Unit) {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), 0)
@@ -499,25 +503,46 @@ class PickerTaskActivity : AppCompatActivity() {
         row.addView(et)
         row.addView(stepButton("+") { step(1) })
         box.addView(row)
+        // вес посылки: взвесить на весах и вписать (служба без веса заказ не примет)
+        val wt = if (weightInitial != null) EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            hint = "0,45"
+            if (weightInitial > 0) setText(weightInitial.toString())
+            textSize = 26f; gravity = Gravity.CENTER
+            setSelectAllOnFocus(true)
+        } else null
+        if (wt != null) {
+            box.addView(TextView(this).apply {
+                text = "Вес посылки, кг — взвесьте коробку целиком"
+                textSize = 13f; setTextColor(MUTED); setPadding(0, dp(12), 0, dp(4))
+            })
+            box.addView(wt)
+        }
         var dialog: android.app.AlertDialog? = null
         fun submit() {
             val v = et.text.toString().toIntOrNull()
             if (v == null || v < 1 || v > 200) { Beep.error(); toast("Коробок от 1 до 200"); return }
+            val w = wt?.text?.toString()?.replace(',', '.')?.trim()?.toDoubleOrNull()
+            if (wt != null && (w == null || w <= 0.0 || w > 100.0)) {
+                Beep.error(); toast("Впишите вес посылки: от 0,01 до 100 кг"); wt.requestFocus(); return
+            }
             if (v > 30) {
                 android.app.AlertDialog.Builder(this)
                     .setTitle("Точно $v коробок?")
                     .setMessage("Напечатается $v накладных.")
-                    .setPositiveButton("Да") { _, _ -> dialog?.dismiss(); onOk(v) }
+                    .setPositiveButton("Да") { _, _ -> dialog?.dismiss(); onOk(v, w) }
                     .setNegativeButton("Исправить", null)
                     .show()
                 return
             }
             dialog?.dismiss()
-            onOk(v)
+            onOk(v, w)
         }
-        et.setOnEditorActionListener { _, _, _ -> submit(); true }
+        et.setOnEditorActionListener { _, _, _ -> if (wt != null) wt.requestFocus() else submit(); true }
+        wt?.setOnEditorActionListener { _, _, _ -> submit(); true }
         dialog = android.app.AlertDialog.Builder(this)
-            .setTitle("Сколько коробок?")
+            .setTitle(if (wt != null) "Коробки и вес" else "Сколько коробок?")
             .setView(box)
             .setPositiveButton("ЗАВЕРШИТЬ И ПЕЧАТАТЬ", null)
             .setNegativeButton("Отмена", null)
@@ -530,12 +555,12 @@ class PickerTaskActivity : AppCompatActivity() {
         dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
     }
 
-    private fun completeWith(boxes: Int?) {
+    private fun completeWith(boxes: Int?, weightKg: Double? = null) {
         if (completing) return
         completing = true
         lifecycleScope.launch {
             try {
-                val r = api.completeTask(taskId, PickerCompleteBody(boxes))
+                val r = api.completeTask(taskId, PickerCompleteBody(boxes, weightKg))
                 val cancelled = r.cancelled_orders ?: 0
                 var msg = "Готово."
                 if (cancelled > 0) msg += " В отмену: $cancelled."
@@ -546,7 +571,12 @@ class PickerTaskActivity : AppCompatActivity() {
                 Toast.makeText(this@PickerTaskActivity, msg, Toast.LENGTH_LONG).show()
                 finish()
             } catch (e: Exception) {
-                toast("Ошибка завершения: ${e.message?.take(60)}")
+                // текст отказа ядра («Впишите вес посылки…»), а не «HTTP 409»
+                val detail = (e as? retrofit2.HttpException)?.let { he ->
+                    val body = try { he.response()?.errorBody()?.string() } catch (_: Exception) { null }
+                    try { body?.let { org.json.JSONObject(it).optString("detail") } } catch (_: Exception) { null }
+                }
+                toast(if (!detail.isNullOrBlank()) detail else "Ошибка завершения: ${e.message?.take(60)}")
                 completing = false
             }
         }
