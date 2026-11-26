@@ -382,11 +382,24 @@ class PickerTaskActivity : AppCompatActivity() {
                         (it.position_index ?: 0) == (target.position_index ?: 0)
                 }
                 val st = upd?.scan?.match_status
+                // v2.18: ядро говорит, чужой это товар или кода просто нет в базе (владелец
+                // 2026-11-26: «сканер не говорит, что у него в базе нет штрихкода»)
+                val foreign = updated.last_scan?.foreign
                 when (st) {
                     "matched" -> { Beep.ok(); showMsg("✓ Есть!", GREEN_BG, GREEN_TX) }
                     "no_barcode" -> { Beep.warn(); showMsg("Отмечено без штрихкода", ORANGE_BG, ORANGE_TX) }
                     // Чужой товар: ядро с 2026-11-23 ничего не засчитывает, позиция ждёт верный скан
-                    else -> { Beep.error(); showMsg("ШТРИХКОД НЕ ТОТ — отсканируйте нужный товар", RED_BG, RED_TX) }
+                    else -> {
+                        Beep.error()
+                        showMsg(
+                            when (foreign) {
+                                true -> "ЧУЖОЙ ТОВАР — это другая карточка, отсканируйте нужный"
+                                false -> "ЭТОГО ШТРИХКОДА НЕТ В БАЗЕ — добавьте код в карточку товара в qoimams"
+                                else -> "ШТРИХКОД НЕ ТОТ — отсканируйте нужный товар"
+                            },
+                            RED_BG, RED_TX
+                        )
+                    }
                 }
                 // Авто-завершение: единственный заказ полностью собран и совпал
                 busy = false

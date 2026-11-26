@@ -42,6 +42,9 @@ class ReturnsActivity : AppCompatActivity() {
             "cancel_shipped" -> Triple(
                 "ОТМЕНА", Color.parseColor("#FEE2E2"), Color.parseColor("#B91C1C")
             )
+            "b2b" -> Triple(
+                "ВОЗВРАТ B2B", Color.parseColor("#DBEAFE"), Color.parseColor("#1D4ED8")
+            )
             else -> Triple(
                 "ВОЗВРАТ", Color.parseColor("#FFEDD5"), Color.parseColor("#C2410C")
             )
@@ -270,6 +273,15 @@ class ReturnsActivity : AppCompatActivity() {
             "LOCKED" -> {
                 Beep.error()
                 showMsg("Приёмку уже ведёт: ${res.holder ?: "другой сотрудник"}", RED_BG, RED_TX)
+            }
+            "NO_REQUEST" -> {
+                // Возврат B2B принимается только против заявки (zakaz: возврат или отказ)
+                Beep.error()
+                showMsg(
+                    "Заказ B2B ${res.order?.order_code ?: ""}: заявки на возврат нет. " +
+                        "Оформите в zakaz возврат или отказ и отсканируйте снова",
+                    RED_BG, RED_TX
+                )
             }
             "NOT_RETURNABLE" -> {
                 Beep.error()

@@ -12,6 +12,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -27,6 +28,7 @@ import com.otgruzka.tsd.api.ReturnCompleteBody
 import com.otgruzka.tsd.api.ReturnDefectLine
 import com.otgruzka.tsd.api.ReturnItemScanBody
 import com.otgruzka.tsd.api.ReturnLine
+import com.otgruzka.tsd.api.ReturnLineQty
 import com.otgruzka.tsd.api.ReturnReceiving
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
@@ -73,6 +75,11 @@ class ReturnReceiveActivity : AppCompatActivity() {
 
     // Вещь, по которой ждём решения БРАК/ВЕРНУТЬ (после MATCHED-скана)
     private var pendingLineId: Int? = null
+
+    // Возврат B2B (v2.18): штуки не сканируются, склад подтверждает количество по
+    // заявке — строка → принимаемое; по умолчанию всё ожидание
+    private val b2bQty = mutableMapOf<Int, Double>()
+    private fun isB2b() = rec?.kind == "b2b"
 
     private val barcodeBuf = StringBuilder()
 
@@ -238,10 +245,13 @@ class ReturnReceiveActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 rec = api.returnsGet(receivingId)
+                if (isB2b() && b2bQty.isEmpty()) {
+                    rec?.lines.orEmpty().forEach { b2bQty[it.line_id] = expected(it) }
+                }
                 render()
                 // Resume полностью отсканированной сессии: решений больше не
                 // ждём (брак уже на сервере) — завершаем сами, кнопки нет
-                if (rec?.status == "IN_PROGRESS" && allDone() && anyScanned() &&
+                if (!isB2b() && rec?.status == "IN_PROGRESS" && allDone() && anyScanned() &&
                     pendingLineId == null && !completing
                 ) {
                     autoComplete()
@@ -272,6 +282,12 @@ class ReturnReceiveActivity : AppCompatActivity() {
 
     private fun handleBarcode(raw: String) {
         if (busy || completing || rec == null) return
+        if (isB2b()) {
+            Beep.warn()
+            showMsg("Возврат B2B: количество по заявке. Нажмите на строку, чтобы изменить",
+                ORANGE_BG, ORANGE_TX)
+            return
+        }
         if (pendingLineId != null) {
             // Сначала реши по вещи в руках — потом сканируй следующую
             Beep.warn()
@@ -412,6 +428,123 @@ class ReturnReceiveActivity : AppCompatActivity() {
         }
     }
 
+    // ─── Возврат B2B: количество по строкам и одна кнопка ──────────────────
+
+    private fun b2bTotal(): Double = b2bQty.values.sum()
+
+    private fun askB2bQty(line: ReturnLine) {
+        val max = expected(line)
+        val et = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(fmtN(b2bQty[line.line_id] ?: max))
+            textSize = 26f; gravity = Gravity.CENTER
+            setSelectAllOnFocus(true)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(TextView(this@ReturnReceiveActivity).apply {
+                text = "${line.name ?: line.offer_code ?: ""}\nПо заявке ${fmtN(max)} шт. Сколько приехало?"
+                textSize = 13f; setTextColor(MUTED); setPadding(0, 0, 0, dp(6))
+            })
+            addView(et)
+        }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Принять, шт")
+            .setView(box)
+            .setPositiveButton("OK", null)
+            .setNegativeButton("Отмена", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val v = et.text.toString().trim().toDoubleOrNull()
+                if (v == null || v < 0 || v > max) {
+                    Beep.error(); toast("От 0 до ${fmtN(max)}"); return@setOnClickListener
+                }
+                b2bQty[line.line_id] = v
+                dialog.dismiss()
+                render()
+            }
+        }
+        dialog.show()
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+    }
+
+    private fun completeB2b() {
+        if (completing) return
+        val total = b2bTotal()
+        if (total <= 0.0) { Beep.error(); toast("Принимать нечего: везде 0"); return }
+        completing = true
+        render()
+        lifecycleScope.launch {
+            try {
+                val res = api.returnsComplete(
+                    receivingId,
+                    ReturnCompleteBody(
+                        force = true,
+                        quantities = b2bQty.map { ReturnLineQty(it.key, fmtN(it.value)) }
+                    )
+                )
+                Toast.makeText(
+                    this@ReturnReceiveActivity,
+                    "Возврат B2B принят: ${res.good_qty} шт → ячейка ВОЗВРАТ" +
+                        (if (n(res.defect_qty) > 0) ", брак: ${res.defect_qty} → зона брака" else "") +
+                        ". Дальше раскладка.",
+                    Toast.LENGTH_LONG
+                ).show()
+                Beep.ok()
+                finish()
+            } catch (e: HttpException) {
+                completing = false
+                val detail = try {
+                    e.response()?.errorBody()?.string()?.let { org.json.JSONObject(it).optString("detail") }
+                } catch (_: Exception) { null }
+                Beep.error()
+                showMsg(if (!detail.isNullOrBlank()) detail else "Ошибка: HTTP ${e.code()}", RED_BG, RED_TX)
+                render()
+            } catch (e: Exception) {
+                completing = false
+                Beep.error()
+                showMsg("Ошибка: ${e.message?.take(60)}", RED_BG, RED_TX)
+                render()
+            }
+        }
+    }
+
+    private fun renderB2bAccept(r: ReturnReceiving) {
+        val card = card(WHITE, BLUE_L)
+        card.addView(TextView(this).apply {
+            text = "ВОЗВРАТ B2B ПО ЗАЯВКЕ"
+            textSize = 10f; letterSpacing = 0.06f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(BLUE)
+        })
+        card.addView(TextView(this).apply {
+            text = r.customer_name ?: r.order_code
+            textSize = 15f; setTypeface(null, Typeface.BOLD)
+            setTextColor(TEXT)
+            setPadding(0, dp(3), 0, 0)
+        })
+        card.addView(TextView(this).apply {
+            text = "Принимаем ${fmtN(b2bTotal())} из ${fmtN(n(r.total_expected))} шт. " +
+                "Приехало меньше — нажмите на строку и поправьте."
+            textSize = 12f; setTextColor(MUTED)
+            setPadding(0, dp(4), 0, 0)
+        })
+        card.addView(Button(this).apply {
+            text = "ПРИНЯТЬ В ВОЗВРАТ"
+            textSize = 16f; isAllCaps = true
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(WHITE)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(BLUE)
+            setOnClickListener { completeB2b() }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)).apply {
+            topMargin = dp(10)
+        })
+        llContent.addView(card)
+        llContent.addView(spacer(dp(10)))
+    }
+
     /** «В коробке больше ничего нет»: возврат — норма Kaspi, завершаем сразу;
      *  отмена должна вернуться целиком — одно предупреждение. */
     private fun confirmPartial() {
@@ -469,10 +602,13 @@ class ReturnReceiveActivity : AppCompatActivity() {
         tvChip.text = label
         tvChip.setTextColor(chipFg)
         tvChip.background = rounded(chipBg, 6)
-        tvSubtitle.text = if (r.stock_restore) "Скан товара → решение: брак или на склад"
-            else "Журнальная приёмка — остатки не двигаются"
+        tvSubtitle.text = when {
+            isB2b() -> "Возврат B2B: проверьте количество и нажмите ПРИНЯТЬ"
+            r.stock_restore -> "Скан товара → решение: брак или на склад"
+            else -> "Журнальная приёмка — остатки не двигаются"
+        }
         val te = n(r.total_expected)
-        val ts = n(r.total_scanned)
+        val ts = if (isB2b()) b2bTotal() else n(r.total_scanned)
         progressBar.max = (te.toInt()).coerceAtLeast(1)
         progressBar.progress = ts.toInt()
         tvProgress.text = "${fmtN(ts)} / ${fmtN(te)} шт"
@@ -517,12 +653,13 @@ class ReturnReceiveActivity : AppCompatActivity() {
                 llContent.addView(card)
                 llContent.addView(spacer(dp(12)))
             }
+            isB2b() -> renderB2bAccept(r)
             pending != null -> renderDecision(pending)
             !allDone() -> renderCurrent()
         }
 
         // «В коробке больше ничего нет» — частичный возврат (норма Kaspi)
-        if (!completing && pending == null && !allDone() && anyScanned()) {
+        if (!isB2b() && !completing && pending == null && !allDone() && anyScanned()) {
             val strip = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -660,6 +797,7 @@ class ReturnReceiveActivity : AppCompatActivity() {
     }
 
     private fun renderLines(r: ReturnReceiving) {
+        if (isB2b()) { renderB2bLines(r); return }
         val next = nextPending()
         r.lines.orEmpty().forEach { l ->
             val sc = scanned(l)
@@ -725,6 +863,45 @@ class ReturnReceiveActivity : AppCompatActivity() {
                     sc > 0 || isCurrent -> BLUE
                     else -> Color.parseColor("#D1D5DB")
                 })
+            })
+            llContent.addView(row)
+            llContent.addView(spacer(dp(6)))
+        }
+    }
+
+    /** Строки возврата B2B: по заявке / принимаем; нажатие — поправить количество. */
+    private fun renderB2bLines(r: ReturnReceiving) {
+        r.lines.orEmpty().forEach { l ->
+            val exp = expected(l)
+            val take = b2bQty[l.line_id] ?: exp
+            val short = take < exp
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = roundedBorder(WHITE, if (short) ORANGE_BR else Color.parseColor("#F3F4F6"), 12)
+                setPadding(dp(12), dp(11), dp(12), dp(11))
+                isClickable = true
+                setOnClickListener { if (!completing) askB2bQty(l) }
+            }
+            val col = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            col.addView(TextView(this).apply {
+                text = l.name ?: l.offer_code ?: "—"
+                textSize = 13f; maxLines = 2
+                setTextColor(TEXT)
+            })
+            col.addView(TextView(this).apply {
+                text = (l.main_sku ?: l.offer_code ?: "") + " · по заявке ${fmtN(exp)} шт"
+                textSize = 11f; setTextColor(FAINT)
+                setPadding(0, dp(1), 0, 0)
+            })
+            row.addView(col)
+            row.addView(TextView(this).apply {
+                text = "${fmtN(take)} шт"
+                textSize = 16f; setTypeface(null, Typeface.BOLD)
+                setTextColor(if (take <= 0.0) RED else if (short) ORANGE_TX else BLUE)
             })
             llContent.addView(row)
             llContent.addView(spacer(dp(6)))

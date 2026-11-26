@@ -22,6 +22,15 @@ data class CoreStore(
     val name: String?
 )
 
+/** v2.18: последний скан позиции — «кода нет в базе» (foreign=false) или «чужой товар»
+ *  (foreign=true); статус для строки у обоих `unknown_barcode`. */
+data class PickerLastScan(
+    val order_code: String?,
+    val position_index: Int?,
+    val status: String?,
+    val foreign: Boolean?
+)
+
 data class PickerScanInfo(
     val barcode_scanned: String?,
     val match_status: String?,
@@ -80,6 +89,8 @@ data class PickerTask(
      *  карточках — на «Завершить» спрашиваем вес посылки. weight_kg — уже известный вес. */
     val need_weight: Boolean = false,
     val weight_kg: Double? = null,
+    /** v2.18: только в ответе на скан позиции (см. PickerLastScan). */
+    val last_scan: PickerLastScan? = null,
 )
 
 data class PickerSessionInfo(
@@ -284,7 +295,8 @@ data class ReturnLine(
 data class ReturnReceiving(
     val id: Int,
     val order_code: String,
-    val kind: String?,          // returned | cancel_shipped
+    val kind: String?,          // returned | cancel_shipped | b2b (v2.18)
+    val customer_name: String? = null,  // возврат B2B: кто вернул
     val status: String?,        // IN_PROGRESS | RECEIVED | CANCELLED
     val stock_restore: Boolean,
     val username: String?,
@@ -307,7 +319,7 @@ data class ReturnPutbackItem(
 )
 
 data class ReturnScanOrderResponse(
-    val result: String,   // OK | NOT_FOUND | NOT_SHIPPED | NOT_RETURNABLE | ALREADY_RECEIVED | LOCKED
+    val result: String,   // OK | NOT_FOUND | NOT_SHIPPED | NOT_RETURNABLE | ALREADY_RECEIVED | LOCKED | NO_REQUEST (B2B без заявки, v2.18)
     val order: ReturnOrderBrief?,
     val resumed: Boolean?,
     val holder: String?,
@@ -328,9 +340,13 @@ data class ReturnItemScanResponse(
 
 data class ReturnDefectLine(val line_id: Int, val qty_defect: String)
 
+/** v2.18, возврат B2B: принятое по строкам (склад подтверждает количество по заявке). */
+data class ReturnLineQty(val line_id: Int, val qty: String)
+
 data class ReturnCompleteBody(
     val force: Boolean = false,
-    val defects: List<ReturnDefectLine> = emptyList()
+    val defects: List<ReturnDefectLine> = emptyList(),
+    val quantities: List<ReturnLineQty> = emptyList()
 )
 
 data class ReturnLineDefectResponse(val receiving: ReturnReceiving?)
