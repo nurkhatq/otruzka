@@ -470,10 +470,53 @@ class ReturnReceiveActivity : AppCompatActivity() {
         dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
     }
 
+    /** v2.19 (владелец 2026-11-26): при возврате сканируется одна коробка, число коробок
+     *  склад вписывает руками — оно уходит в историю заказа для споров с клиентом. */
+    private fun askReturnBoxes(onOk: (Int) -> Unit) {
+        val et = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText("1")
+            textSize = 30f; gravity = Gravity.CENTER
+            setSelectAllOnFocus(true)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(TextView(this@ReturnReceiveActivity).apply {
+                text = "Сколько коробок привезли? Пересчитайте, число попадёт в историю заказа."
+                textSize = 13f; setTextColor(MUTED); setPadding(0, 0, 0, dp(8))
+            })
+            addView(et)
+        }
+        var dialog: android.app.AlertDialog? = null
+        fun submit() {
+            val v = et.text.toString().toIntOrNull()
+            if (v == null || v < 0 || v > 200) { Beep.error(); toast("Коробок от 0 до 200"); return }
+            dialog?.dismiss()
+            onOk(v)
+        }
+        et.setOnEditorActionListener { _, _, _ -> submit(); true }
+        dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Коробок привезли")
+            .setView(box)
+            .setPositiveButton("ПРИНЯТЬ", null)
+            .setNegativeButton("Отмена", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener { submit() }
+            et.requestFocus()
+        }
+        dialog.show()
+    }
+
     private fun completeB2b() {
         if (completing) return
         val total = b2bTotal()
         if (total <= 0.0) { Beep.error(); toast("Принимать нечего: везде 0"); return }
+        askReturnBoxes { boxes -> completeB2bWith(boxes) }
+    }
+
+    private fun completeB2bWith(boxes: Int) {
         completing = true
         render()
         lifecycleScope.launch {
@@ -482,7 +525,8 @@ class ReturnReceiveActivity : AppCompatActivity() {
                     receivingId,
                     ReturnCompleteBody(
                         force = true,
-                        quantities = b2bQty.map { ReturnLineQty(it.key, fmtN(it.value)) }
+                        quantities = b2bQty.map { ReturnLineQty(it.key, fmtN(it.value)) },
+                        boxes = boxes
                     )
                 )
                 Toast.makeText(

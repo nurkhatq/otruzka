@@ -39,6 +39,8 @@ class PickerTasksActivity : AppCompatActivity() {
             "mass_single" -> Triple("A", Color.parseColor("#F3E8FF"), Color.parseColor("#7E22CE"))
             "kit", "multi" -> Triple("C", Color.parseColor("#FFEDD5"), Color.parseColor("#C2410C"))
             "CANCEL" -> Triple("ОТМ", Color.parseColor("#FEE2E2"), Color.parseColor("#B91C1C"))
+            // v2.19: исправление собранного заказа B2B (оператор изменил состав)
+            "B2B_FIX" -> Triple("ИСПР", Color.parseColor("#FEF3C7"), Color.parseColor("#B45309"))
             else -> Triple("B", Color.parseColor("#DBEAFE"), Color.parseColor("#1D4ED8"))
         }
 
@@ -49,6 +51,7 @@ class PickerTasksActivity : AppCompatActivity() {
             "kit" -> "Наборы"
             "multi" -> "Мультипозиция"
             "CANCEL" -> "Отмена"
+            "B2B_FIX" -> "Исправление"
             else -> type ?: "—"
         }
 

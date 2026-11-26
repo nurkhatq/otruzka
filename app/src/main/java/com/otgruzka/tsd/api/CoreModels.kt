@@ -346,7 +346,9 @@ data class ReturnLineQty(val line_id: Int, val qty: String)
 data class ReturnCompleteBody(
     val force: Boolean = false,
     val defects: List<ReturnDefectLine> = emptyList(),
-    val quantities: List<ReturnLineQty> = emptyList()
+    val quantities: List<ReturnLineQty> = emptyList(),
+    /** v2.19: возврат B2B — сколько коробок привезли (сканируется одна, число руками). */
+    val boxes: Int? = null
 )
 
 data class ReturnLineDefectResponse(val receiving: ReturnReceiving?)

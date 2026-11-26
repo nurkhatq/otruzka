@@ -281,6 +281,12 @@ class PickerTaskActivity : AppCompatActivity() {
 
     // ─── Scan logic ──────────────────────────────────────────────────────────
 
+    /** v2.19: задание «Исправление» (B2B_FIX) начинается со скана любой коробки заказа —
+     *  так сборщик точно стоит у тех коробок, которые докладывает или разбирает. */
+    private var fixBoxOk = false
+    private fun isFix(t: PickerTask?) = t?.task_type == "B2B_FIX"
+    private fun fixOrderCode(t: PickerTask?): String? = t?.orders?.firstOrNull()?.order_code
+
     private fun qtyDone(o: PickerOrderItem): Int {
         val s = o.scan ?: return 0
         if (s.match_status == "skipped") return 0
@@ -300,6 +306,26 @@ class PickerTaskActivity : AppCompatActivity() {
     private fun handleBarcode(raw: String) {
         if (busy || completing || task == null || openDialogs > 0) return
         val code = raw.replace(Regex("-\\d+$"), "")   // Mindeo добавляет счётчик
+        if (isFix(task) && !allDone()) {
+            val want = fixOrderCode(task)
+            if (Regex("^B\\d{6,}$").matches(code)) {
+                if (code == want) {
+                    fixBoxOk = true
+                    Beep.ok()
+                    showMsg("✓ Коробка заказа $code. Докладывайте и вынимайте по списку", GREEN_BG, GREEN_TX)
+                    render()
+                } else {
+                    Beep.error()
+                    showMsg("ЭТО КОРОБКА ДРУГОГО ЗАКАЗА ($code). Нужен $want", RED_BG, RED_TX)
+                }
+                return
+            }
+            if (!fixBoxOk) {
+                Beep.error()
+                showMsg("СНАЧАЛА ОТСКАНИРУЙТЕ КОРОБКУ ЗАКАЗА $want", RED_BG, RED_TX)
+                return
+            }
+        }
         if (bulkMode && !allDone()) {
             if (bulkBarcode != null) return
             handleScanBulk(code)
@@ -653,6 +679,22 @@ class PickerTaskActivity : AppCompatActivity() {
         val anyScanned = t.orders.orEmpty().any { it.scan != null }
 
         llContent.removeAllViews()
+
+        // ── Исправление собранного заказа (v2.19): сначала коробка, потом список ──
+        if (mine && !done && isFix(t)) {
+            val want = fixOrderCode(t) ?: ""
+            llContent.addView(TextView(this).apply {
+                text = if (fixBoxOk) "Коробка $want опознана. ДОЛОЖИТЬ — сканируйте, что кладёте; ВЫНУТЬ — сканируйте, что достали. Коробок останется столько, сколько скажете на «Завершить»."
+                    else "ОТСКАНИРУЙТЕ ЛЮБУЮ КОРОБКУ ЗАКАЗА $want (накладную на ней), потом докладывайте или вынимайте по списку"
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(if (fixBoxOk) GREEN_TX else ORANGE_TX)
+                background = rounded(if (fixBoxOk) GREEN_BG else ORANGE_BG, 10)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = dp(8)
+            })
+        }
 
         // ── Режим сканирования (массовые) ──
         if (mine && !done && t.task_type == "mass_single") {
